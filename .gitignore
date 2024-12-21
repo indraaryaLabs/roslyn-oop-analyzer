@@ -1,0 +1,52 @@
+# Build Folders
+bin/
+obj/
+out/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Auto-generated files
+*.generated.cs
+*.g.cs
+*.g.i.cs
+
+# Visual Studio working files
+.vscode/
+.vs/
+.vscode/settings.json
+.vscode/launch.json
+
+# Packages
+*.nupkg
+*.snupkg
+packages/
+
+# Logs and Database files
+*.log
+*.tlog
+*.sql
+*.sqlite
+*.sqlite3
+
+# Temporary Files
+*.tmp
+*.temp
+*.cache
+*.pdb
+*.ilk
+
+# Deployment Files
+.publish/
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Rider Files (optional, if using JetBrains Rider)
+.idea/
