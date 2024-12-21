@@ -50,7 +50,6 @@ namespace MOOD_Metrics
             // Perform MOOD Metrics Analysis
             try
             {
-                // Example analysis: Counts and dummy metrics
                 int totalMethods = CountMethods(sourceCode);
                 int totalAttributes = CountAttributes(sourceCode);
                 int hiddenMethods = CountHiddenMethods(sourceCode);
@@ -63,10 +62,10 @@ namespace MOOD_Metrics
                 // Calculate Metrics
                 double mhf = totalMethods > 0 ? (double)hiddenMethods / totalMethods : 0;
                 double ahf = totalAttributes > 0 ? (double)hiddenAttributes / totalAttributes : 0;
-                double mif = totalMethods > 0 ? (double)inheritedMethods / totalMethods : 0;
-                double aif = totalAttributes > 0 ? (double)inheritedAttributes / totalAttributes : 0;
+                double mif = totalMethods > 0 ? (double)inheritedMethods / (totalMethods + inheritedMethods) : 0;
+                double aif = totalAttributes > 0 ? (double)inheritedAttributes / (totalAttributes + inheritedAttributes) : 0;
                 double cf = totalMethods > 1 ? (double)couplingRelations / (totalMethods * (totalMethods - 1)) : 0;
-                double pf = totalMethods > 0 ? (double)polymorphicMethods / totalMethods : 0;
+                double pf = totalMethods > 0 ? (double)polymorphicMethods / (totalMethods * (inheritedMethods > 0 ? inheritedMethods : 1)) : 0;
 
                 // Display Metrics
                 textBoxOutput.Text = $"Metrics Analysis:\n\n" +
@@ -83,11 +82,11 @@ namespace MOOD_Metrics
             }
         }
 
-        // Example Helper Functions for Analysis
+        // Helper Functions for MOOD Metrics Analysis
         private int CountMethods(string sourceCode)
         {
-            // Count methods by identifying "method-like" patterns
-            return sourceCode.Split(new[] { "void ", "int ", "string ", "public ", "private ", "protected " }, StringSplitOptions.None).Length - 1;
+            // Count methods by identifying method patterns
+            return sourceCode.Split(new[] { " void ", " int ", " string ", " public ", " private ", " protected " }, StringSplitOptions.None).Length - 1;
         }
 
         private int CountAttributes(string sourceCode)
@@ -110,26 +109,26 @@ namespace MOOD_Metrics
 
         private int CountInheritedMethods(string sourceCode)
         {
-            // Placeholder: Advanced parsing needed to detect inherited methods
-            return 0;
+            // Count inherited methods based on `: BaseClass` syntax and override keywords
+            return sourceCode.Split(new[] { "override " }, StringSplitOptions.None).Length - 1;
         }
 
         private int CountInheritedAttributes(string sourceCode)
         {
-            // Placeholder: Advanced parsing needed to detect inherited attributes
-            return 0;
+            // Placeholder: Detect inherited attributes using advanced parsing
+            return 0; // Advanced logic needed
         }
 
         private int CountCouplingRelations(string sourceCode)
         {
-            // Placeholder: Coupling calculation logic needed
-            return 0;
+            // Placeholder: Count instances of method calls across classes
+            return sourceCode.Split(new[] { "." }, StringSplitOptions.None).Count(line => line.Contains("("));
         }
 
         private int CountPolymorphicMethods(string sourceCode)
         {
-            // Placeholder: Polymorphic method detection logic needed
-            return 0;
+            // Count methods with `virtual` or `override` keywords
+            return sourceCode.Split(new[] { "virtual ", "override " }, StringSplitOptions.None).Length - 1;
         }
     }
 }

@@ -40,7 +40,7 @@
             // labelAppName
             // 
             labelAppName.AutoSize = true;
-            labelAppName.Location = new Point(366, 17);
+            labelAppName.Location = new Point(305, 9);
             labelAppName.Name = "labelAppName";
             labelAppName.Size = new Size(168, 20);
             labelAppName.TabIndex = 0;
