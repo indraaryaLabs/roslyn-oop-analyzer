@@ -67,14 +67,39 @@ namespace MOOD_Metrics
                 double cf = totalMethods > 1 ? (double)couplingRelations / (totalMethods * (totalMethods - 1)) : 0;
                 double pf = totalMethods > 0 ? (double)polymorphicMethods / (totalMethods * (inheritedMethods > 0 ? inheritedMethods : 1)) : 0;
 
-                // Display Metrics
+                // Formulas and Explanations
+                string mhfFormula = "MHF = Hidden Methods / Total Methods";
+                string mhfExplanation = $"Hidden Methods: {hiddenMethods}, Total Methods: {totalMethods}";
+
+                string ahfFormula = "AHF = Hidden Attributes / Total Attributes";
+                string ahfExplanation = $"Hidden Attributes: {hiddenAttributes}, Total Attributes: {totalAttributes}";
+
+                string mifFormula = "MIF = Inherited Methods / (Total Methods + Inherited Methods)";
+                string mifExplanation = $"Inherited Methods: {inheritedMethods}, Total Methods: {totalMethods}";
+
+                string aifFormula = "AIF = Inherited Attributes / (Total Attributes + Inherited Attributes)";
+                string aifExplanation = $"Inherited Attributes: {inheritedAttributes}, Total Attributes: {totalAttributes}";
+
+                string cfFormula = "CF = Coupling Relations / (Total Methods * (Total Methods - 1))";
+                string cfExplanation = $"Coupling Relations: {couplingRelations}, Total Methods: {totalMethods}";
+
+                string pfFormula = "PF = Polymorphic Methods / (Total Methods * Inherited Methods)";
+                string pfExplanation = $"Polymorphic Methods: {polymorphicMethods}, Total Methods: {totalMethods}, Inherited Methods: {inheritedMethods}";
+
+                // Display Metrics with Explanations
                 textBoxOutput.Text = $"Metrics Analysis:\n\n" +
                                      $"Method Hiding Factor (MHF): {mhf:P2}\n" +
+                                     $"Formula: {mhfFormula}\nExplanation: {mhfExplanation}\n\n" +
                                      $"Attribute Hiding Factor (AHF): {ahf:P2}\n" +
+                                     $"Formula: {ahfFormula}\nExplanation: {ahfExplanation}\n\n" +
                                      $"Method Inheritance Factor (MIF): {mif:P2}\n" +
+                                     $"Formula: {mifFormula}\nExplanation: {mifExplanation}\n\n" +
                                      $"Attribute Inheritance Factor (AIF): {aif:P2}\n" +
+                                     $"Formula: {aifFormula}\nExplanation: {aifExplanation}\n\n" +
                                      $"Coupling Factor (CF): {cf:P2}\n" +
-                                     $"Polymorphism Factor (PF): {pf:P2}\n";
+                                     $"Formula: {cfFormula}\nExplanation: {cfExplanation}\n\n" +
+                                     $"Polymorphism Factor (PF): {pf:P2}\n" +
+                                     $"Formula: {pfFormula}\nExplanation: {pfExplanation}\n";
             }
             catch (Exception ex)
             {
@@ -85,49 +110,41 @@ namespace MOOD_Metrics
         // Helper Functions for MOOD Metrics Analysis
         private int CountMethods(string sourceCode)
         {
-            // Count methods by identifying method patterns
             return sourceCode.Split(new[] { " void ", " int ", " string ", " public ", " private ", " protected " }, StringSplitOptions.None).Length - 1;
         }
 
         private int CountAttributes(string sourceCode)
         {
-            // Count attributes by identifying field declarations
             return sourceCode.Split(new[] { ";" }, StringSplitOptions.None).Count(line => line.Contains("public") || line.Contains("private") || line.Contains("protected"));
         }
 
         private int CountHiddenMethods(string sourceCode)
         {
-            // Count methods declared as private
             return sourceCode.Split(new[] { "private " }, StringSplitOptions.None).Length - 1;
         }
 
         private int CountHiddenAttributes(string sourceCode)
         {
-            // Count attributes declared as private
             return sourceCode.Split(new[] { "private " }, StringSplitOptions.None).Length - 1;
         }
 
         private int CountInheritedMethods(string sourceCode)
         {
-            // Count inherited methods based on `: BaseClass` syntax and override keywords
             return sourceCode.Split(new[] { "override " }, StringSplitOptions.None).Length - 1;
         }
 
         private int CountInheritedAttributes(string sourceCode)
         {
-            // Placeholder: Detect inherited attributes using advanced parsing
-            return 0; // Advanced logic needed
+            return 0; // Placeholder: Detect inherited attributes using advanced parsing
         }
 
         private int CountCouplingRelations(string sourceCode)
         {
-            // Placeholder: Count instances of method calls across classes
             return sourceCode.Split(new[] { "." }, StringSplitOptions.None).Count(line => line.Contains("("));
         }
 
         private int CountPolymorphicMethods(string sourceCode)
         {
-            // Count methods with `virtual` or `override` keywords
             return sourceCode.Split(new[] { "virtual ", "override " }, StringSplitOptions.None).Length - 1;
         }
     }

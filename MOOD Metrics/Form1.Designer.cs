@@ -88,6 +88,7 @@
             textBoxOutput.Multiline = true;
             textBoxOutput.Name = "textBoxOutput";
             textBoxOutput.ReadOnly = true;
+            textBoxOutput.ScrollBars = ScrollBars.Vertical;
             textBoxOutput.Size = new Size(347, 279);
             textBoxOutput.TabIndex = 5;
             // 
@@ -97,6 +98,7 @@
             textBoxSource.Multiline = true;
             textBoxSource.Name = "textBoxSource";
             textBoxSource.ReadOnly = true;
+            textBoxSource.ScrollBars = ScrollBars.Vertical;
             textBoxSource.Size = new Size(347, 279);
             textBoxSource.TabIndex = 6;
             // 
