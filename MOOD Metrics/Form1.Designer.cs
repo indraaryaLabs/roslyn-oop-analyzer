@@ -35,6 +35,11 @@
             buttonAnalyze = new Button();
             textBoxOutput = new TextBox();
             textBoxSource = new TextBox();
+            buttonhelp = new Button();
+            buttoninfo = new Button();
+            buttonexport = new Button();
+            buttonclear = new Button();
+            textBoxSummary = new TextBox();
             SuspendLayout();
             // 
             // labelAppName
@@ -45,6 +50,7 @@
             labelAppName.Size = new Size(168, 20);
             labelAppName.TabIndex = 0;
             labelAppName.Text = "MOOD Metrics Analyzer";
+            labelAppName.Click += labelAppName_Click;
             // 
             // label1
             // 
@@ -102,11 +108,65 @@
             textBoxSource.Size = new Size(347, 279);
             textBoxSource.TabIndex = 6;
             // 
+            // buttonhelp
+            // 
+            buttonhelp.Location = new Point(12, 443);
+            buttonhelp.Name = "buttonhelp";
+            buttonhelp.Size = new Size(82, 29);
+            buttonhelp.TabIndex = 7;
+            buttonhelp.Text = "Help";
+            buttonhelp.UseVisualStyleBackColor = true;
+            buttonhelp.Click += buttonhelp_Click;
+            // 
+            // buttoninfo
+            // 
+            buttoninfo.Location = new Point(119, 443);
+            buttoninfo.Name = "buttoninfo";
+            buttoninfo.Size = new Size(95, 29);
+            buttoninfo.TabIndex = 8;
+            buttoninfo.Text = "Information";
+            buttoninfo.UseVisualStyleBackColor = true;
+            // 
+            // buttonexport
+            // 
+            buttonexport.Location = new Point(649, 443);
+            buttonexport.Name = "buttonexport";
+            buttonexport.Size = new Size(94, 29);
+            buttonexport.TabIndex = 9;
+            buttonexport.Text = "Export";
+            buttonexport.UseVisualStyleBackColor = true;
+            buttonexport.Click += buttonexport_Click;
+            // 
+            // buttonclear
+            // 
+            buttonclear.Location = new Point(237, 443);
+            buttonclear.Name = "buttonclear";
+            buttonclear.Size = new Size(80, 29);
+            buttonclear.TabIndex = 10;
+            buttonclear.Text = "Clear";
+            buttonclear.UseVisualStyleBackColor = true;
+            buttonclear.Click += buttonclear_Click;
+            // 
+            // textBoxSummary
+            // 
+            textBoxSummary.Location = new Point(766, 134);
+            textBoxSummary.Multiline = true;
+            textBoxSummary.Name = "textBoxSummary";
+            textBoxSummary.ReadOnly = true;
+            textBoxSummary.ScrollBars = ScrollBars.Vertical;
+            textBoxSummary.Size = new Size(347, 279);
+            textBoxSummary.TabIndex = 11;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
+            ClientSize = new Size(1182, 503);
+            Controls.Add(textBoxSummary);
+            Controls.Add(buttonclear);
+            Controls.Add(buttonexport);
+            Controls.Add(buttoninfo);
+            Controls.Add(buttonhelp);
             Controls.Add(textBoxSource);
             Controls.Add(textBoxOutput);
             Controls.Add(buttonAnalyze);
@@ -129,5 +189,10 @@
         private Button buttonAnalyze;
         private TextBox textBoxOutput;
         private TextBox textBoxSource;
+        private Button buttonhelp;
+        private Button buttoninfo;
+        private Button buttonexport;
+        private Button buttonclear;
+        private TextBox textBoxSummary;
     }
 }
