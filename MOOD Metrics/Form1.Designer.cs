@@ -45,7 +45,7 @@
             // labelAppName
             // 
             labelAppName.AutoSize = true;
-            labelAppName.Location = new Point(305, 9);
+            labelAppName.Location = new Point(566, 23);
             labelAppName.Name = "labelAppName";
             labelAppName.Size = new Size(168, 20);
             labelAppName.TabIndex = 0;
@@ -63,14 +63,14 @@
             // 
             // textBoxPath
             // 
-            textBoxPath.Location = new Point(223, 65);
+            textBoxPath.Location = new Point(222, 68);
             textBoxPath.Name = "textBoxPath";
-            textBoxPath.Size = new Size(311, 27);
+            textBoxPath.Size = new Size(628, 27);
             textBoxPath.TabIndex = 2;
             // 
             // buttonBrowse
             // 
-            buttonBrowse.Location = new Point(564, 68);
+            buttonBrowse.Location = new Point(892, 68);
             buttonBrowse.Name = "buttonBrowse";
             buttonBrowse.Size = new Size(94, 29);
             buttonBrowse.TabIndex = 3;
@@ -80,7 +80,7 @@
             // 
             // buttonAnalyze
             // 
-            buttonAnalyze.Location = new Point(683, 68);
+            buttonAnalyze.Location = new Point(1019, 68);
             buttonAnalyze.Name = "buttonAnalyze";
             buttonAnalyze.Size = new Size(94, 29);
             buttonAnalyze.TabIndex = 4;
@@ -126,10 +126,11 @@
             buttoninfo.TabIndex = 8;
             buttoninfo.Text = "Information";
             buttoninfo.UseVisualStyleBackColor = true;
+            buttoninfo.Click += buttoninfo_Click;
             // 
             // buttonexport
             // 
-            buttonexport.Location = new Point(649, 443);
+            buttonexport.Location = new Point(1019, 443);
             buttonexport.Name = "buttonexport";
             buttonexport.Size = new Size(94, 29);
             buttonexport.TabIndex = 9;
@@ -174,6 +175,8 @@
             Controls.Add(textBoxPath);
             Controls.Add(label1);
             Controls.Add(labelAppName);
+            ForeColor = Color.Black;
+            MaximizeBox = false;
             Name = "Form1";
             Text = "Form1";
             ResumeLayout(false);

@@ -151,11 +151,11 @@ namespace MOOD_Metrics
                 double pf = CalculateSystemPF(allClassMetricsPF);
 
                 textBoxSummary.Text = $"Ringkasan Metrik MOOD Tingkat Sistem Keseluruhan:{Environment.NewLine}{Environment.NewLine}";
-                textBoxSummary.Text += $"Method Hiding Factor (MHF): {mhf:P2}\n";
-                textBoxSummary.Text += $"Attribute Hiding Factor (AHF): {ahf:P2}\n";
-                textBoxSummary.Text += $"Method Inheritance Factor (MIF): {mif:P2}\n";
-                textBoxSummary.Text += $"Attribute Inheritance Factor (AIF): {aif:P2}\n";
-                textBoxSummary.Text += $"Coupling Factor (CF): {cf:P2}\n";
+                textBoxSummary.Text += $"Method Hiding Factor (MHF): {mhf:P2}\n{Environment.NewLine}";
+                textBoxSummary.Text += $"Attribute Hiding Factor (AHF): {ahf:P2}\n{Environment.NewLine}";
+                textBoxSummary.Text += $"Method Inheritance Factor (MIF): {mif:P2}\n {Environment.NewLine}";
+                textBoxSummary.Text += $"Attribute Inheritance Factor (AIF): {aif:P2}\n{Environment.NewLine}";
+                textBoxSummary.Text += $"Coupling Factor (CF): {cf:P2}\n {Environment.NewLine}";
                 textBoxSummary.Text += $"Polymorphism Factor (PF): {pf:P2}";
             }
             catch (Exception ex)
@@ -180,7 +180,8 @@ namespace MOOD_Metrics
                 sb.AppendLine("MHF:");
                 foreach (var metric in mhfMetrics)
                 {
-                    sb.AppendLine($"    - Total Methods = {metric.TotalMethods}, Hidden = {metric.HiddenMethods}");
+                    sb.AppendLine($"     Total Methods = {metric.TotalMethods}");
+                    sb.AppendLine($"     Hidden = {metric.HiddenMethods}{Environment.NewLine}");
                 }
             }
 
@@ -189,7 +190,8 @@ namespace MOOD_Metrics
                 sb.AppendLine("AHF:");
                 foreach (var metric in ahfMetrics)
                 {
-                    sb.AppendLine($"    - Total Attributes = {metric.TotalAttributes}, Hidden = {metric.HiddenAttributes}");
+                    sb.AppendLine($"     Total Attributes = {metric.TotalAttributes}");
+                    sb.AppendLine($"     Hidden = {metric.HiddenAttributes}{Environment.NewLine}");
                 }
             }
 
@@ -198,7 +200,8 @@ namespace MOOD_Metrics
                 sb.AppendLine("MIF:");
                 foreach (var metric in mifMetrics)
                 {
-                    sb.AppendLine($"    - Total Methods = {metric.TotalMethods}, Inherited = {metric.InheritedMethods}");
+                    sb.AppendLine($"     Total Methods = {metric.TotalMethods}");
+                    sb.AppendLine($"     Inherited = {metric.InheritedMethods} {Environment.NewLine}");
                 }
             }
 
@@ -207,7 +210,8 @@ namespace MOOD_Metrics
                 sb.AppendLine("AIF:");
                 foreach (var metric in aifMetrics)
                 {
-                    sb.AppendLine($"    - Total Attributes = {metric.TotalAttributes}, Inherited = {metric.InheritedAttributes}");
+                    sb.AppendLine($"     Total Attributes = {metric.TotalAttributes}");
+                    sb.AppendLine($"     Inherited = {metric.InheritedAttributes}{Environment.NewLine}");
                 }
             }
 
@@ -216,7 +220,7 @@ namespace MOOD_Metrics
                 sb.AppendLine("CF:");
                 foreach (var metric in cfMetrics)
                 {
-                    sb.AppendLine($"    - Coupled Classes = {metric.CoupledClasses}");
+                    sb.AppendLine($"     Coupled Classes = {metric.CoupledClasses} {Environment.NewLine}");
                 }
             }
 
@@ -225,7 +229,9 @@ namespace MOOD_Metrics
                 sb.AppendLine("PF:");
                 foreach (var metric in pfMetrics)
                 {
-                    sb.AppendLine($"    - New Methods = {metric.NewMethods}, Overriding Methods = {metric.OverridingMethods}, Descendants = {metric.DescendantsCount}");
+                    sb.AppendLine($"     New Methods = {metric.NewMethods}");
+                    sb.AppendLine($"     Overriding Methods = {metric.OverridingMethods}");
+                    sb.AppendLine($"     Descendants = {metric.DescendantsCount}");
                 }
             }
 
@@ -625,7 +631,7 @@ namespace MOOD_Metrics
             MessageBox.Show(message, "Bantuan", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        private void button1_Click_1(object sender, EventArgs e) // This is likely for the "Information" button
+        private void buttoninfo_Click(object sender, EventArgs e) // This is likely for the "Information" button
         {
             string information = "MOOD Metrics Analyzer\n" +
                                  "Versi: 1.0.0\n" +
