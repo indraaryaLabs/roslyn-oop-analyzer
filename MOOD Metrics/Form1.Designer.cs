@@ -45,32 +45,35 @@
             // labelAppName
             // 
             labelAppName.AutoSize = true;
-            labelAppName.Location = new Point(566, 23);
+            labelAppName.Font = new Font("Yu Gothic UI", 12F, FontStyle.Bold, GraphicsUnit.Point);
+            labelAppName.Location = new Point(479, 21);
             labelAppName.Name = "labelAppName";
-            labelAppName.Size = new Size(168, 20);
+            labelAppName.Size = new Size(229, 28);
             labelAppName.TabIndex = 0;
             labelAppName.Text = "MOOD Metrics Analyzer";
+            labelAppName.TextAlign = ContentAlignment.TopCenter;
             labelAppName.Click += labelAppName_Click;
             // 
             // label1
             // 
             label1.AutoSize = true;
-            label1.Location = new Point(12, 68);
+            label1.Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
+            label1.Location = new Point(11, 68);
             label1.Name = "label1";
-            label1.Size = new Size(176, 20);
+            label1.Size = new Size(203, 23);
             label1.TabIndex = 1;
             label1.Text = "Choose Source Code File:";
             // 
             // textBoxPath
             // 
-            textBoxPath.Location = new Point(222, 68);
+            textBoxPath.Location = new Point(220, 67);
             textBoxPath.Name = "textBoxPath";
             textBoxPath.Size = new Size(628, 27);
             textBoxPath.TabIndex = 2;
             // 
             // buttonBrowse
             // 
-            buttonBrowse.Location = new Point(892, 68);
+            buttonBrowse.Location = new Point(879, 68);
             buttonBrowse.Name = "buttonBrowse";
             buttonBrowse.Size = new Size(94, 29);
             buttonBrowse.TabIndex = 3;
@@ -80,12 +83,14 @@
             // 
             // buttonAnalyze
             // 
-            buttonAnalyze.Location = new Point(1019, 68);
+            buttonAnalyze.BackColor = Color.White;
+            buttonAnalyze.ForeColor = Color.Black;
+            buttonAnalyze.Location = new Point(1005, 68);
             buttonAnalyze.Name = "buttonAnalyze";
             buttonAnalyze.Size = new Size(94, 29);
             buttonAnalyze.TabIndex = 4;
             buttonAnalyze.Text = "Analyze";
-            buttonAnalyze.UseVisualStyleBackColor = true;
+            buttonAnalyze.UseVisualStyleBackColor = false;
             buttonAnalyze.Click += buttonAnalyze_Click;
             // 
             // textBoxOutput
