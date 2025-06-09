@@ -321,254 +321,135 @@ namespace MOOD_Metrics
 
         private List<ClassMetric> CalculateClassMetrics(string sourceCode)
         {
-            var classMetrics = new List<ClassMetric>();
-            // Regex untuk memisahkan kode sumber berdasarkan definisi kelas
-            var classSplits = Regex.Split(sourceCode, @"(?:\b(?:public|private|protected|internal|sealed|abstract)?\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[a-zA-Z_][a-zA-Z0-9_,\s]*)?\s*{)");
+            var results = new List<ClassMetric>();
+            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
 
-            // Iterasi melalui bagian-bagian yang dihasilkan oleh split
-            // Setiap kelas akan memiliki 3 bagian: [kode sebelum kelas], [nama kelas], [body kelas]
-            for (int i = 1; i < classSplits.Length; i += 2)
+            foreach (Match match in matches)
             {
-                string className = classSplits[i]; // Nama kelas ada di grup penangkap pertama Regex
-                string classBody = classSplits[i + 1]; // Body kelas setelah nama kelas
+                string className = match.Groups[1].Value;
+                int bodyStart = match.Index + match.Length;
+                string body = ExtractClassBody(sourceCode, bodyStart);
 
-                if (string.IsNullOrWhiteSpace(className)) continue;
-
-                int totalMethods = 0;
-                int hiddenMethods = 0; // Metode private untuk MHF
-
-                var lines = classBody.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var line in lines)
+                int total = 0, hidden = 0;
+                var lines = body.Split('\n');
+                foreach (string l in lines)
                 {
-                    string trimmedLine = line.Trim();
-
-                    // Logika deteksi metode:
-                    // Harus mengandung '(' dan ')', tidak diakhiri ';', dan memiliki modifier akses
-                    // Memastikan bukan deklarasi kelas itu sendiri
-                    bool isMethodCandidate = (
-                        (trimmedLine.Contains("public ") || trimmedLine.Contains("private ") || trimmedLine.Contains("protected ") || trimmedLine.Contains("internal ")) &&
-                        trimmedLine.Contains("(") && trimmedLine.Contains(")") &&
-                        !trimmedLine.EndsWith(";") &&
-                        !trimmedLine.Contains("class ") // Hindari menghitung deklarasi kelas sebagai metode
-                    );
-
-                    // Filter properti otomatis yang terlihat seperti metode (misal: public int MyProp { get; set; })
-                    if (isMethodCandidate && !Regex.IsMatch(trimmedLine, @"\{\s*(?:get|set|init)\s*;", RegexOptions.IgnoreCase))
+                    string line = l.Trim();
+                    if (line.Contains("(") && line.Contains(")") && !line.EndsWith(";") &&
+                        (line.Contains("public") || line.Contains("private") || line.Contains("protected")))
                     {
-                        totalMethods++;
-                        // MHF: Hitung metode 'private' sebagai hidden
-                        if (trimmedLine.Contains("private "))
-                        {
-                            hiddenMethods++;
-                        }
+                        total++;
+                        if (line.Contains("private") || line.Contains("protected")) hidden++;
                     }
                 }
-                classMetrics.Add(new ClassMetric
-                {
-                    ClassName = className,
-                    TotalMethods = totalMethods,
-                    HiddenMethods = hiddenMethods
-                });
+                results.Add(new ClassMetric { ClassName = className, TotalMethods = total, HiddenMethods = hidden });
             }
-            return classMetrics;
+            return results;
         }
+
 
         private List<ClassAttributeMetric> CalculateClassMetricsForAHF(string sourceCode)
         {
-            var classAttributeMetrics = new List<ClassAttributeMetric>();
-            var classSplits = Regex.Split(sourceCode, @"(?:\b(?:public|private|protected|internal|sealed|abstract)?\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[a-zA-Z_][a-zA-Z0-9_,\s]*)?\s*{)");
+            var results = new List<ClassAttributeMetric>();
+            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
 
-            for (int i = 1; i < classSplits.Length; i += 2)
+            foreach (Match match in matches)
             {
-                string className = classSplits[i];
-                string classBody = classSplits[i + 1];
+                string className = match.Groups[1].Value;
+                string body = ExtractClassBody(sourceCode, match.Index + match.Length);
 
-                if (string.IsNullOrWhiteSpace(className)) continue;
-
-                int totalAttributes = 0;
-                int hiddenAttributes = 0; // Atribut private untuk AHF
-
-                var lines = classBody.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var line in lines)
+                int total = 0, hidden = 0;
+                var lines = body.Split('\n');
+                foreach (string l in lines)
                 {
-                    string trimmedLine = line.Trim();
-
-                    // Logika deteksi atribut:
-                    // Harus mengandung ';', tidak mengandung '(', dan memiliki modifier akses
-                    // Memastikan bukan deklarasi kelas
-                    bool isAttributeCandidate = (
-                        (trimmedLine.Contains("public ") || trimmedLine.Contains("private ") || trimmedLine.Contains("protected ") || trimmedLine.Contains("internal ")) &&
-                        trimmedLine.Contains(";") &&
-                        !trimmedLine.Contains("(") && // Bukan metode
-                        !trimmedLine.Contains("class ") // Bukan deklarasi kelas
-                    );
-
-                    // Filter properti otomatis (misal: public int MyProp { get; set; })
-                    // Regex ini mencoba menangkap pola properti otomatis
-                    if (isAttributeCandidate && !Regex.IsMatch(trimmedLine, @"\{\s*(?:get|set|init)\s*;", RegexOptions.IgnoreCase) &&
-                        !Regex.IsMatch(trimmedLine, @"\b(?:get|set|init)\s*\b", RegexOptions.IgnoreCase)) // Menangkap properti di baris terpisah
+                    string line = l.Trim();
+                    if (line.Contains(";") && !line.Contains("(") &&
+                        (line.Contains("public") || line.Contains("private") || line.Contains("protected")))
                     {
-                        totalAttributes++;
-                        // AHF: Hitung atribut 'private' sebagai hidden
-                        if (trimmedLine.Contains("private "))
-                        {
-                            hiddenAttributes++;
-                        }
+                        total++;
+                        if (line.Contains("private") || line.Contains("protected")) hidden++;
                     }
                 }
-                classAttributeMetrics.Add(new ClassAttributeMetric
-                {
-                    ClassName = className,
-                    TotalAttributes = totalAttributes,
-                    HiddenAttributes = hiddenAttributes
-                });
+                results.Add(new ClassAttributeMetric { ClassName = className, TotalAttributes = total, HiddenAttributes = hidden });
             }
-            return classAttributeMetrics;
+            return results;
         }
+
+
 
         private List<ClassInheritanceMetric> CalculateClassMetricsForMIF(string sourceCode)
         {
-            var classInheritanceMetrics = new List<ClassInheritanceMetric>();
-            var classSplits = Regex.Split(sourceCode, @"(?:\b(?:public|private|protected|internal|sealed|abstract)?\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[a-zA-Z_][a-zA-Z0-9_,\s]*)?\s*{)");
+            var results = new List<ClassInheritanceMetric>();
+            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
 
-            for (int i = 1; i < classSplits.Length; i += 2)
+            foreach (Match match in matches)
             {
-                string className = classSplits[i];
-                string classBody = classSplits[i + 1];
+                string className = match.Groups[1].Value;
+                string body = ExtractClassBody(sourceCode, match.Index + match.Length);
 
-                if (string.IsNullOrWhiteSpace(className)) continue;
-
-                int totalMethods = 0;
-                int inheritedMethods = 0; // Metode override untuk MIF (sesuai Form1.cs asli)
-
-                var lines = classBody.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var line in lines)
+                int total = 0, inherited = 0;
+                var lines = body.Split('\n');
+                foreach (string l in lines)
                 {
-                    string trimmedLine = line.Trim();
-
-                    // Logika deteksi metode (sama seperti MHF untuk total metode)
-                    bool isMethodCandidate = (
-                        (trimmedLine.Contains("public ") || trimmedLine.Contains("private ") || trimmedLine.Contains("protected ") || trimmedLine.Contains("internal ")) &&
-                        trimmedLine.Contains("(") && trimmedLine.Contains(")") &&
-                        !trimmedLine.EndsWith(";") &&
-                        !trimmedLine.Contains("class ")
-                    );
-
-                    if (isMethodCandidate && !Regex.IsMatch(trimmedLine, @"\{\s*(?:get|set|init)\s*;", RegexOptions.IgnoreCase))
+                    string line = l.Trim();
+                    if (line.Contains("(") && line.Contains(")") && !line.EndsWith(";") &&
+                        (line.Contains("public") || line.Contains("private") || line.Contains("protected")))
                     {
-                        totalMethods++;
-                        // MIF: Hitung metode 'override' sebagai inherited
-                        if (trimmedLine.Contains("override "))
-                        {
-                            inheritedMethods++;
-                        }
+                        total++;
+                        if (line.Contains("override")) inherited++;
                     }
                 }
-                classInheritanceMetrics.Add(new ClassInheritanceMetric
-                {
-                    ClassName = className,
-                    TotalMethods = totalMethods,
-                    InheritedMethods = inheritedMethods
-                });
+                results.Add(new ClassInheritanceMetric { ClassName = className, TotalMethods = total, InheritedMethods = inherited });
             }
-            return classInheritanceMetrics;
+            return results;
         }
+
 
         private List<ClassAttributeInheritanceMetric> CalculateClassMetricsForAIF(string sourceCode)
         {
-            var classAttributeInheritanceMetrics = new List<ClassAttributeInheritanceMetric>();
-            var classSplits = Regex.Split(sourceCode, @"(?:\b(?:public|private|protected|internal|sealed|abstract)?\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[a-zA-Z_][a-zA-Z0-9_,\s]*)?\s*{)");
+            var results = new List<ClassAttributeInheritanceMetric>();
+            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
 
-            for (int i = 1; i < classSplits.Length; i += 2)
+            foreach (Match match in matches)
             {
-                string className = classSplits[i];
-                string classBody = classSplits[i + 1];
+                string className = match.Groups[1].Value;
+                string body = ExtractClassBody(sourceCode, match.Index + match.Length);
 
-                if (string.IsNullOrWhiteSpace(className)) continue;
-
-                int totalAttributes = 0;
-                int inheritedAttributes = 0; // Atribut protected untuk AIF (sesuai Form1.cs asli)
-
-                var lines = classBody.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var line in lines)
+                int total = 0, inherited = 0;
+                var lines = body.Split('\n');
+                foreach (string l in lines)
                 {
-                    string trimmedLine = line.Trim();
-
-                    // Logika deteksi atribut (sama seperti AHF untuk total atribut)
-                    bool isAttributeCandidate = (
-                        (trimmedLine.Contains("public ") || trimmedLine.Contains("private ") || trimmedLine.Contains("protected ") || trimmedLine.Contains("internal ")) &&
-                        trimmedLine.Contains(";") &&
-                        !trimmedLine.Contains("(") &&
-                        !trimmedLine.Contains("class ")
-                    );
-
-                    if (isAttributeCandidate && !Regex.IsMatch(trimmedLine, @"\{\s*(?:get|set|init)\s*;", RegexOptions.IgnoreCase) &&
-                        !Regex.IsMatch(trimmedLine, @"\b(?:get|set|init)\s*\b", RegexOptions.IgnoreCase))
+                    string line = l.Trim();
+                    if (line.Contains(";") && !line.Contains("(") &&
+                        (line.Contains("public") || line.Contains("private") || line.Contains("protected")))
                     {
-                         totalAttributes++;
-                         // AIF: Hitung atribut 'protected' sebagai inherited
-                         if (trimmedLine.Contains("protected "))
-                         {
-                             inheritedAttributes++;
-                         }
+                        total++;
+                        if (line.Contains("protected")) inherited++;
                     }
                 }
-                classAttributeInheritanceMetrics.Add(new ClassAttributeInheritanceMetric
-                {
-                    ClassName = className,
-                    TotalAttributes = totalAttributes,
-                    InheritedAttributes = inheritedAttributes
-                });
+                results.Add(new ClassAttributeInheritanceMetric { ClassName = className, TotalAttributes = total, InheritedAttributes = inherited });
             }
-            return classAttributeInheritanceMetrics;
+            return results;
         }
 
-        private List<ClassCouplingMetric> CalculateCouplingFactor(string sourceCode, HashSet<string> allClassNamesInSystem)
+        private List<ClassCouplingMetric> CalculateCouplingFactor(string sourceCode, HashSet<string> allClasses)
         {
-            var classCouplingMetrics = new List<ClassCouplingMetric>();
-            var classSplits = Regex.Split(sourceCode, @"(?:\b(?:public|private|protected|internal|sealed|abstract)?\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[a-zA-Z_][a-zA-Z0-9_,\s]*)?\s*{)");
+            var results = new List<ClassCouplingMetric>();
+            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
 
-            for (int i = 1; i < classSplits.Length; i += 2)
+            foreach (Match match in matches)
             {
-                string className = classSplits[i];
-                string classBody = classSplits[i + 1];
+                string className = match.Groups[1].Value;
+                string body = ExtractClassBody(sourceCode, match.Index + match.Length);
 
-                if (string.IsNullOrWhiteSpace(className)) continue;
-
-                var lines = classBody.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-                int coupledClasses = 0;
-                var usedClasses = new HashSet<string>();
-
-                foreach (var line in lines)
+                var used = new HashSet<string>();
+                foreach (string other in allClasses)
                 {
-                    string trimmedLine = line.Trim();
-
-                    // Logika deteksi coupling:
-                    // Mencari penggunaan 'new' atau '.' (dot operator) yang diikuti nama kelas lain
-                    // Mengabaikan 'using' statement dan komentar
-                    if ((trimmedLine.Contains("new ") || trimmedLine.Contains(".")) && !trimmedLine.StartsWith("using ") && !trimmedLine.StartsWith("//"))
-                    {
-                        // Menggunakan Regex untuk mengekstrak kata-kata yang mungkin merupakan nama kelas
-                        var words = Regex.Matches(trimmedLine, @"\b[a-zA-Z_][a-zA-Z0-9_]*\b");
-                        foreach (Match wordMatch in words)
-                        {
-                            string word = wordMatch.Value;
-                            // Pastikan kata adalah nama kelas yang valid di sistem dan bukan kelas saat ini
-                            if (allClassNamesInSystem.Contains(word) && word != className && !usedClasses.Contains(word))
-                            {
-                                usedClasses.Add(word);
-                                coupledClasses++;
-                            }
-                        }
-                    }
+                    if (other != className && body.Contains(other)) used.Add(other);
                 }
-                classCouplingMetrics.Add(new ClassCouplingMetric
-                {
-                    ClassName = className,
-                    CoupledClasses = coupledClasses
-                });
+                results.Add(new ClassCouplingMetric { ClassName = className, CoupledClasses = used.Count });
             }
-            return classCouplingMetrics;
+            return results;
         }
 
         private List<ClassPolymorphismMetric> CalculatePolymorphismFactor(string sourceCode, HashSet<string> allClassNamesInSystem)
@@ -675,28 +556,28 @@ namespace MOOD_Metrics
         {
             public string ClassName { get; set; }
             public int TotalMethods { get; set; }
-            public int HiddenMethods { get; set; } // Metode private
+            public int HiddenMethods { get; set; }
         }
 
         private class ClassAttributeMetric
         {
             public string ClassName { get; set; }
             public int TotalAttributes { get; set; }
-            public int HiddenAttributes { get; set; } // Atribut private
+            public int HiddenAttributes { get; set; }
         }
 
         private class ClassInheritanceMetric
         {
             public string ClassName { get; set; }
             public int TotalMethods { get; set; }
-            public int InheritedMethods { get; set; } // Metode override
+            public int InheritedMethods { get; set; }
         }
 
         private class ClassAttributeInheritanceMetric
         {
             public string ClassName { get; set; }
             public int TotalAttributes { get; set; }
-            public int InheritedAttributes { get; set; } // Atribut protected
+            public int InheritedAttributes { get; set; }
         }
 
         private class ClassCouplingMetric
@@ -711,6 +592,19 @@ namespace MOOD_Metrics
             public int NewMethods { get; set; }
             public int OverridingMethods { get; set; }
             public int DescendantsCount { get; set; }
+        }
+
+        private string ExtractClassBody(string sourceCode, int startIndex)
+        {
+            int brace = 1;
+            int index = startIndex;
+            while (index < sourceCode.Length && brace > 0)
+            {
+                if (sourceCode[index] == '{') brace++;
+                else if (sourceCode[index] == '}') brace--;
+                index++;
+            }
+            return sourceCode.Substring(startIndex, index - startIndex - 1);
         }
 
         // --- Event Handler UI (tidak berubah) ---
