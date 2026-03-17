@@ -1,683 +1,117 @@
-// mood-metrics/MOOD Metrics/Form1.cs
-
+﻿// mood-metrics/MOOD Metrics/Form1.cs
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Windows.Forms;
-using System.Collections.Generic;
 using System.Text;
-using System.Text.RegularExpressions; // Tambahkan ini untuk menggunakan Regex
+using System.Windows.Forms;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
+using System.Collections.Immutable;
+using MOOD_Metrics;
+using System.Threading.Tasks; // Added for async/await
 
 namespace MOOD_Metrics
 {
     public partial class Form1 : Form
     {
-        private List<string> csharpFiles = new List<string>(); // Untuk menyimpan path file C# yang dipilih
+        private List<string> csharpFiles = new();
+        private RoslynMoodAnalyzer analyzer = new();
+
+        private FormWindowState previousWindowState;
+        private FormBorderStyle previousFormBorderStyle;
+        private bool isFullscreen = false;
+
+        // Deklarasikan paddingBetweenTextBoxes sebagai field kelas
+        private const int paddingBetweenTextBoxes = 15; // Jarak antar textbox
 
         public Form1()
         {
             InitializeComponent();
+            previousWindowState = this.WindowState;
+            previousFormBorderStyle = this.FormBorderStyle;
+            this.Resize += Form1_Resize;
+            // Panggil resize pertama kali untuk mengatur tata letak awal
+            Form1_Resize(this, EventArgs.Empty);
+        }
+
+        private async void buttonAnalyze_Click(object sender, EventArgs e) // Changed to async
+        {
+            if (!csharpFiles.Any())
+            {
+                MessageBox.Show("Silakan pilih folder terlebih dahulu.");
+                return;
+            }
+
+            // Tampilkan progress bar dan nonaktifkan tombol
+            progressBarAnalysis.Visible = true; //
+            buttonAnalyze.Enabled = false; //
+            buttonBrowse.Enabled = false; //
+            buttonclear.Enabled = false; //
+            buttonexport.Enabled = false; //
+            buttonhelp.Enabled = false; //
+            buttoninfo.Enabled = false; //
+            buttonToggleFullscreen.Enabled = false; //
+
+            textBoxOutput.Clear(); //
+            textBoxSummary.Clear(); //
+
+            try
+            {
+                analyzer = new RoslynMoodAnalyzer();
+                // Jalankan analisis di thread terpisah
+                await Task.Run(() => analyzer.Analyze(csharpFiles.ToArray())); //
+
+                AppendFileMetricsToOutput(
+                    "(Semua File)",
+                    (List<ClassMetric>)analyzer.MhfMetrics,
+                    (List<ClassAttributeMetric>)analyzer.AhfMetrics,
+                    (List<ClassInheritanceMetric>)analyzer.MifMetrics,
+                    (List<ClassAttributeInheritanceMetric>)analyzer.AifMetrics,
+                    (List<ClassCouplingMetric>)analyzer.CfMetrics,
+                    (List<ClassPolymorphismMetric>)analyzer.PfMetrics
+                );
+            }
+            catch (Exception ex) // Added error handling
+            {
+                MessageBox.Show($"Terjadi kesalahan saat menganalisis: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); //
+            }
+            finally
+            {
+                // Sembunyikan progress bar dan aktifkan kembali tombol
+                progressBarAnalysis.Visible = false; //
+                buttonAnalyze.Enabled = true; //
+                buttonBrowse.Enabled = true; //
+                buttonclear.Enabled = true; //
+                buttonexport.Enabled = true; //
+                buttonhelp.Enabled = true; //
+                buttoninfo.Enabled = true; //
+                buttonToggleFullscreen.Enabled = true; //
+            }
         }
 
         private void buttonBrowse_Click(object sender, EventArgs e)
         {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog
+            using var folderDialog = new FolderBrowserDialog();
+            if (folderDialog.ShowDialog() == DialogResult.OK)
             {
-                Description = "Pilih folder yang berisi file Kode Sumber C#"
-            };
+                textBoxPath.Text = folderDialog.SelectedPath;
+                csharpFiles = Directory.GetFiles(folderDialog.SelectedPath, "*.cs", SearchOption.AllDirectories).ToList();
 
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                textBoxPath.Text = folderBrowserDialog.SelectedPath;
-                csharpFiles.Clear(); // Hapus daftar file sebelumnya
+                StringBuilder sbSource = new StringBuilder();
+                sbSource.AppendLine($"Ditemukan {csharpFiles.Count} file C# di '{folderDialog.SelectedPath}' (termasuk subfolder):");
+                sbSource.AppendLine();
 
-                try
+                foreach (var filePath in csharpFiles)
                 {
-                    // Ambil semua file .cs di folder yang dipilih dan subfoldernya
-                    string[] files = Directory.GetFiles(folderBrowserDialog.SelectedPath, "*.cs", SearchOption.AllDirectories);
-
-                    if (files.Length == 0)
-                    {
-                        MessageBox.Show("Tidak ada file C# ditemukan di folder yang dipilih atau subfoldernya.", "Informasi", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        textBoxSource.Text = ""; // Kosongkan kotak teks kode sumber
-                        return;
-                    }
-
-                    csharpFiles.AddRange(files);
-
-                    if (csharpFiles.Any())
-                    {
-                        textBoxSource.Text = $"Ditemukan {csharpFiles.Count} file C# di '{folderBrowserDialog.SelectedPath}' (termasuk subfolder):{Environment.NewLine}{Environment.NewLine}" +
-                                             string.Join(Environment.NewLine, csharpFiles.Select(Path.GetFileName)) +
-                                             $"{Environment.NewLine}{Environment.NewLine}Klik 'Analyze' untuk memproses semua file.";
-                    }
-                    else
-                    {
-                        textBoxSource.Text = "Tidak ada file C# yang dipilih.";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Error membaca folder: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    textBoxSource.Text = "";
-                }
-            }
-        }
-
-        private void buttonAnalyze_Click(object sender, EventArgs e)
-        {
-            if (!csharpFiles.Any())
-            {
-                MessageBox.Show("Silakan pilih folder dengan file C# terlebih dahulu.", "Peringatan", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            // Inisialisasi daftar untuk mengumpulkan metrik dari semua kelas di semua file
-            List<ClassMetric> allClassMetricsMHF = new List<ClassMetric>();
-            List<ClassAttributeMetric> allClassMetricsAHF = new List<ClassAttributeMetric>();
-            List<ClassInheritanceMetric> allClassMetricsMIF = new List<ClassInheritanceMetric>();
-            List<ClassAttributeInheritanceMetric> allClassMetricsAIF = new List<ClassAttributeInheritanceMetric>();
-            List<ClassCouplingMetric> allClassMetricsCF = new List<ClassCouplingMetric>();
-            List<ClassPolymorphismMetric> allClassMetricsPF = new List<ClassPolymorphismMetric>();
-
-            textBoxOutput.Clear();    // Kosongkan output detail
-            textBoxSummary.Clear(); // Kosongkan ringkasan keseluruhan
-            textBoxOutput.Text += $"Menganalisis file di: {textBoxPath.Text}{Environment.NewLine}";
-            textBoxOutput.Text += $"-----------------------------------------{Environment.NewLine}{Environment.NewLine}";
-
-            // Pass pertama: Kumpulkan semua nama kelas di seluruh sistem untuk analisis global (CF & PF)
-            HashSet<string> allClassNamesInSystem = new HashSet<string>();
-            foreach (string filePath in csharpFiles)
-            {
-                try
-                {
-                    string sourceCode = File.ReadAllText(filePath);
-                    // Gunakan Regex untuk deteksi nama kelas yang lebih robust
-                    var classMatches = Regex.Matches(sourceCode, @"\b(?:public|private|protected|internal|sealed|abstract)?\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\b");
-                    foreach (Match match in classMatches)
-                    {
-                        string className = match.Groups[1].Value;
-                        if (!string.IsNullOrWhiteSpace(className))
-                        {
-                            allClassNamesInSystem.Add(className);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    textBoxOutput.Text += $"Peringatan: Tidak dapat membaca kelas dari {Path.GetFileName(filePath)} untuk CF/PF global: {ex.Message}{Environment.NewLine}";
-                }
-            }
-
-            // Pass kedua: Lakukan analisis detail untuk setiap file dan akumulasikan metrik global
-            foreach (string filePath in csharpFiles)
-            {
-                try
-                {
-                    string sourceCode = File.ReadAllText(filePath);
-                    string relativePath = Path.GetRelativePath(textBoxPath.Text, filePath);
-
-                    // Panggil fungsi perhitungan metrik untuk file saat ini
-                    var fileClassMetricsMHF = CalculateClassMetrics(sourceCode);
-                    var fileClassMetricsAHF = CalculateClassMetricsForAHF(sourceCode);
-                    var fileClassMetricsMIF = CalculateClassMetricsForMIF(sourceCode);
-                    var fileClassMetricsAIF = CalculateClassMetricsForAIF(sourceCode);
-                    var fileClassMetricsCF = CalculateCouplingFactor(sourceCode, allClassNamesInSystem);
-                    var fileClassMetricsPF = CalculatePolymorphismFactor(sourceCode, allClassNamesInSystem);
-
-                    // Tambahkan metrik file individual ke output dengan struktur yang diperbaiki
-                    AppendFileMetricsToOutput(relativePath, fileClassMetricsMHF, fileClassMetricsAHF, fileClassMetricsMIF, fileClassMetricsAIF, fileClassMetricsCF, fileClassMetricsPF);
-
-                    // Tambahkan ke daftar keseluruhan untuk perhitungan metrik tingkat sistem
-                    allClassMetricsMHF.AddRange(fileClassMetricsMHF);
-                    allClassMetricsAHF.AddRange(fileClassMetricsAHF);
-                    allClassMetricsMIF.AddRange(fileClassMetricsMIF);
-                    allClassMetricsAIF.AddRange(fileClassMetricsAIF);
-                    allClassMetricsCF.AddRange(fileClassMetricsCF);
-                    allClassMetricsPF.AddRange(fileClassMetricsPF);
-
-                    textBoxOutput.Text += Environment.NewLine; // Tambahkan pemisah untuk keterbacaan
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Error menganalisis {Path.GetFileName(filePath)}: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    textBoxOutput.Text += $"Error menganalisis {Path.GetFileName(filePath)}: {ex.Message}{Environment.NewLine}{Environment.NewLine}";
-                }
-            }
-
-            // Hitung dan tampilkan metrik tingkat sistem keseluruhan di textBoxSummary
-            try
-            {
-                double mhf = CalculateSystemMHF(allClassMetricsMHF);
-                double ahf = CalculateSystemAHF(allClassMetricsAHF);
-                double mif = CalculateSystemMIF(allClassMetricsMIF);
-                double aif = CalculateSystemAIF(allClassMetricsAIF);
-                double cf = CalculateSystemCF(allClassMetricsCF);
-                double pf = CalculateSystemPF(allClassMetricsPF);
-
-                textBoxSummary.Text = $"Ringkasan Metrik MOOD Tingkat Sistem Keseluruhan:{Environment.NewLine}{Environment.NewLine}";
-                textBoxSummary.Text += $"Method Hiding Factor (MHF): {mhf:P2}{Environment.NewLine}";
-                textBoxSummary.Text += $"Attribute Hiding Factor (AHF): {ahf:P2}{Environment.NewLine}";
-                textBoxSummary.Text += $"Method Inheritance Factor (MIF): {mif:P2}{Environment.NewLine}";
-                textBoxSummary.Text += $"Attribute Inheritance Factor (AIF): {aif:P2}{Environment.NewLine}";
-                textBoxSummary.Text += $"Coupling Factor (CF): {cf:P2}{Environment.NewLine}";
-                textBoxSummary.Text += $"Polymorphism Factor (PF): {pf:P2}";
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error menghitung metrik sistem keseluruhan: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        // --- Metode Pembantu untuk Menambahkan Metrik File ke Output ---
-        private void AppendFileMetricsToOutput(string filePath,
-                                               List<ClassMetric> mhfMetrics,
-                                               List<ClassAttributeMetric> ahfMetrics,
-                                               List<ClassInheritanceMetric> mifMetrics,
-                                               List<ClassAttributeInheritanceMetric> aifMetrics,
-                                               List<ClassCouplingMetric> cfMetrics,
-                                               List<ClassPolymorphismMetric> pfMetrics)
-        {
-            StringBuilder sb = new StringBuilder();
-
-            sb.AppendLine($"--- Detail Analisis untuk: {filePath} ---"); // Header untuk file yang dianalisis
-            sb.AppendLine(); // Baris kosong untuk pemisah
-
-            // MHF
-            if (mhfMetrics.Any())
-            {
-                sb.AppendLine("MHF:");
-                foreach (var metric in mhfMetrics)
-                {
-                    sb.AppendLine($"  Kelas: {metric.ClassName}"); // Tambahkan Nama Kelas
-                    sb.AppendLine($"    Total Methods = {metric.TotalMethods}");
-                    sb.AppendLine($"    Hidden = {metric.HiddenMethods}");
-                }
-                sb.AppendLine(); // Baris kosong setelah setiap bagian metrik
-            }
-
-            // AHF
-            if (ahfMetrics.Any())
-            {
-                sb.AppendLine("AHF:");
-                foreach (var metric in ahfMetrics)
-                {
-                    sb.AppendLine($"  Kelas: {metric.ClassName}"); // Tambahkan Nama Kelas
-                    sb.AppendLine($"    Total Attributes = {metric.TotalAttributes}");
-                    sb.AppendLine($"    Hidden = {metric.HiddenAttributes}");
-                }
-                sb.AppendLine();
-            }
-
-            // MIF
-            if (mifMetrics.Any())
-            {
-                sb.AppendLine("MIF:");
-                foreach (var metric in mifMetrics)
-                {
-                    sb.AppendLine($"  Kelas: {metric.ClassName}"); // Tambahkan Nama Kelas
-                    sb.AppendLine($"    Total Methods = {metric.TotalMethods}");
-                    sb.AppendLine($"    Inherited = {metric.InheritedMethods}");
-                }
-                sb.AppendLine();
-            }
-
-            // AIF
-            if (aifMetrics.Any())
-            {
-                sb.AppendLine("AIF:");
-                foreach (var metric in aifMetrics)
-                {
-                    sb.AppendLine($"  Kelas: {metric.ClassName}"); // Tambahkan Nama Kelas
-                    sb.AppendLine($"    Total Attributes = {metric.TotalAttributes}");
-                    sb.AppendLine($"    Inherited = {metric.InheritedAttributes}");
-                }
-                sb.AppendLine();
-            }
-
-            // CF
-            if (cfMetrics.Any())
-            {
-                sb.AppendLine("CF:");
-                foreach (var metric in cfMetrics)
-                {
-                    sb.AppendLine($"  Kelas: {metric.ClassName}"); // Tambahkan Nama Kelas
-                    sb.AppendLine($"    Coupled Classes = {metric.CoupledClasses}");
-                }
-                sb.AppendLine();
-            }
-
-            // PF
-            if (pfMetrics.Any())
-            {
-                sb.AppendLine("PF:");
-                foreach (var metric in pfMetrics)
-                {
-                    sb.AppendLine($"  Kelas: {metric.ClassName}"); // Tambahkan Nama Kelas
-                    sb.AppendLine($"    New Methods = {metric.NewMethods}");
-                    sb.AppendLine($"    Overriding Methods = {metric.OverridingMethods}");
-                    sb.AppendLine($"    Descendants = {metric.DescendantsCount}");
-                }
-                sb.AppendLine();
-            }
-
-            if (sb.Length == 0)
-            {
-                sb.AppendLine("  Tidak ada metrik yang relevan ditemukan di file ini.");
-            }
-
-            textBoxOutput.AppendText(sb.ToString());
-        }
-
-        // --- Fungsi Pembantu untuk Analisis Metrik MOOD ---
-        // Fungsi-fungsi ini menghitung metrik tingkat sistem
-        private double CalculateSystemMHF(List<ClassMetric> classMetrics)
-        {
-            int totalMethods = classMetrics.Sum(cm => cm.TotalMethods);
-            int hiddenMethods = classMetrics.Sum(cm => cm.HiddenMethods);
-            return totalMethods > 0 ? (double)hiddenMethods / totalMethods : 0;
-        }
-
-        private double CalculateSystemAHF(List<ClassAttributeMetric> classAttributeMetrics)
-        {
-            int totalAttributes = classAttributeMetrics.Sum(cam => cam.TotalAttributes);
-            int hiddenAttributes = classAttributeMetrics.Sum(cam => cam.HiddenAttributes);
-            return totalAttributes > 0 ? (double)hiddenAttributes / totalAttributes : 0;
-        }
-
-        private double CalculateSystemMIF(List<ClassInheritanceMetric> classInheritanceMetrics)
-        {
-            int totalMethods = classInheritanceMetrics.Sum(cim => cim.TotalMethods);
-            int inheritedMethods = classInheritanceMetrics.Sum(cim => cim.InheritedMethods);
-            return totalMethods > 0 ? (double)inheritedMethods / totalMethods : 0;
-        }
-
-        private double CalculateSystemAIF(List<ClassAttributeInheritanceMetric> classAttributeInheritanceMetrics)
-        {
-            int totalAttributes = classAttributeInheritanceMetrics.Sum(caim => caim.TotalAttributes);
-            int inheritedAttributes = classAttributeInheritanceMetrics.Sum(caim => caim.InheritedAttributes);
-            return totalAttributes > 0 ? (double)inheritedAttributes / totalAttributes : 0;
-        }
-
-        private double CalculateSystemCF(List<ClassCouplingMetric> classCouplingMetrics)
-        {
-            // Hitung nama kelas unik di semua file untuk totalClasses dalam sistem
-            int totalClasses = classCouplingMetrics.Select(c => c.ClassName).Distinct().Count();
-            int totalCoupledClasses = classCouplingMetrics.Sum(ccm => ccm.CoupledClasses);
-
-            // Rumus CF dari jurnal: sum(is_client) / TC^2
-            // Namun, karena kode Anda menggunakan (totalClasses * (totalClasses - 1)), saya akan mengikuti itu.
-            return totalClasses > 1 ? (double)totalCoupledClasses / (totalClasses * (totalClasses - 1)) : 0;
-        }
-
-        private double CalculateSystemPF(List<ClassPolymorphismMetric> classPolymorphismMetrics)
-        {
-            int maxPolymorphicSituations = classPolymorphismMetrics.Sum(cpm => cpm.NewMethods * cpm.DescendantsCount);
-            int overridingMethods = classPolymorphismMetrics.Sum(cpm => cpm.OverridingMethods);
-            return maxPolymorphicSituations > 0 ? (double)overridingMethods / maxPolymorphicSituations : 0;
-        }
-
-        // --- Fungsi-fungsi untuk menghitung metrik per kelas ---
-
-        private List<ClassMetric> CalculateClassMetrics(string sourceCode)
-        {
-            var results = new List<ClassMetric>();
-            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
-
-            foreach (Match match in matches)
-            {
-                string className = match.Groups[1].Value;
-                int bodyStart = match.Index + match.Length;
-                string body = ExtractClassBody(sourceCode, bodyStart);
-
-                int total = 0, hidden = 0;
-                var lines = body.Split('\n');
-                foreach (string l in lines)
-                {
-                    string line = l.Trim();
-                    if (line.Contains("(") && line.Contains(")") && !line.EndsWith(";") &&
-                        (line.Contains("public") || line.Contains("private") || line.Contains("protected")))
-                    {
-                        total++;
-                        if (line.Contains("private") || line.Contains("protected")) hidden++;
-                    }
-                }
-                results.Add(new ClassMetric { ClassName = className, TotalMethods = total, HiddenMethods = hidden });
-            }
-            return results;
-        }
-
-
-        private List<ClassAttributeMetric> CalculateClassMetricsForAHF(string sourceCode)
-        {
-            var results = new List<ClassAttributeMetric>();
-            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
-
-            foreach (Match match in matches)
-            {
-                string className = match.Groups[1].Value;
-                string body = ExtractClassBody(sourceCode, match.Index + match.Length);
-
-                int total = 0, hidden = 0;
-                var lines = body.Split('\n');
-                foreach (string l in lines)
-                {
-                    string line = l.Trim();
-                    if (line.Contains(";") && !line.Contains("(") &&
-                        (line.Contains("public") || line.Contains("private") || line.Contains("protected")))
-                    {
-                        total++;
-                        if (line.Contains("private") || line.Contains("protected")) hidden++;
-                    }
-                }
-                results.Add(new ClassAttributeMetric { ClassName = className, TotalAttributes = total, HiddenAttributes = hidden });
-            }
-            return results;
-        }
-
-
-
-        private List<ClassInheritanceMetric> CalculateClassMetricsForMIF(string sourceCode)
-        {
-            var results = new List<ClassInheritanceMetric>();
-            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
-
-            foreach (Match match in matches)
-            {
-                string className = match.Groups[1].Value;
-                string body = ExtractClassBody(sourceCode, match.Index + match.Length);
-
-                int total = 0, inherited = 0;
-                var lines = body.Split('\n');
-                foreach (string l in lines)
-                {
-                    string line = l.Trim();
-                    if (line.Contains("(") && line.Contains(")") && !line.EndsWith(";") &&
-                        (line.Contains("public") || line.Contains("private") || line.Contains("protected")))
-                    {
-                        total++;
-                        if (line.Contains("override")) inherited++;
-                    }
-                }
-                results.Add(new ClassInheritanceMetric { ClassName = className, TotalMethods = total, InheritedMethods = inherited });
-            }
-            return results;
-        }
-
-
-        private List<ClassAttributeInheritanceMetric> CalculateClassMetricsForAIF(string sourceCode)
-        {
-            var results = new List<ClassAttributeInheritanceMetric>();
-            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
-
-            foreach (Match match in matches)
-            {
-                string className = match.Groups[1].Value;
-                string body = ExtractClassBody(sourceCode, match.Index + match.Length);
-
-                int total = 0, inherited = 0;
-                var lines = body.Split('\n');
-                foreach (string l in lines)
-                {
-                    string line = l.Trim();
-                    if (line.Contains(";") && !line.Contains("(") &&
-                        (line.Contains("public") || line.Contains("private") || line.Contains("protected")))
-                    {
-                        total++;
-                        if (line.Contains("protected")) inherited++;
-                    }
-                }
-                results.Add(new ClassAttributeInheritanceMetric { ClassName = className, TotalAttributes = total, InheritedAttributes = inherited });
-            }
-            return results;
-        }
-
-        private List<ClassCouplingMetric> CalculateCouplingFactor(string sourceCode, HashSet<string> allClasses)
-        {
-            var results = new List<ClassCouplingMetric>();
-            var matches = Regex.Matches(sourceCode, @"class\s+(\w+)([^\{]*)\{");
-
-            foreach (Match match in matches)
-            {
-                string className = match.Groups[1].Value;
-                string body = ExtractClassBody(sourceCode, match.Index + match.Length);
-
-                var used = new HashSet<string>();
-                foreach (string other in allClasses)
-                {
-                    if (other != className && body.Contains(other)) used.Add(other);
-                }
-                results.Add(new ClassCouplingMetric { ClassName = className, CoupledClasses = used.Count });
-            }
-            return results;
-        }
-
-        private List<ClassPolymorphismMetric> CalculatePolymorphismFactor(string sourceCode, HashSet<string> allClassNamesInSystem)
-        {
-            var classPolymorphismMetrics = new List<ClassPolymorphismMetric>();
-            var classSplits = Regex.Split(sourceCode, @"(?:\b(?:public|private|protected|internal|sealed|abstract)?\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[a-zA-Z_][a-zA-Z0-9_,\s]*)?\s*{)");
-
-            var classHierarchy = new Dictionary<string, List<string>>();
-            // Bangun hierarki kelas dari sourceCode yang diberikan (file saat ini)
-            var classDefinitionMatches = Regex.Matches(sourceCode, @"\b(?:public|private|protected|internal|sealed|abstract)?\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\b(?::\s*([a-zA-Z_][a-zA-Z0-9_,\s]*))?");
-            foreach (Match match in classDefinitionMatches)
-            {
-                string currentClassName = match.Groups[1].Value;
-                string baseClassPart = match.Groups[2].Value; // Bagian base class
-                if (!string.IsNullOrWhiteSpace(baseClassPart))
-                {
-                    // Ambil nama kelas dasar pertama jika ada beberapa (misal: Class : Base, Interface)
-                    string baseClassName = baseClassPart.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-                    // Pastikan base class ada di daftar kelas yang terdeteksi di seluruh sistem
-                    if (!string.IsNullOrWhiteSpace(baseClassName) && allClassNamesInSystem.Contains(baseClassName))
-                    {
-                        if (!classHierarchy.ContainsKey(baseClassName))
-                        {
-                            classHierarchy[baseClassName] = new List<string>();
-                        }
-                        classHierarchy[baseClassName].Add(currentClassName);
-                    }
-                }
-            }
-
-
-            for (int i = 1; i < classSplits.Length; i += 2)
-            {
-                string className = classSplits[i];
-                string classBody = classSplits[i + 1];
-
-                if (string.IsNullOrWhiteSpace(className)) continue;
-
-                int newMethods = 0;
-                int overridingMethods = 0;
-                int descendantsCount = 0;
-
-                var lines = classBody.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var line in lines)
-                {
-                    string trimmedLine = line.Trim();
-
-                    // Logika deteksi metode (mirip dengan MHF)
-                    bool isMethodCandidate = (
-                        (trimmedLine.Contains("public ") || trimmedLine.Contains("private ") || trimmedLine.Contains("protected ") || trimmedLine.Contains("internal ")) &&
-                        trimmedLine.Contains("(") && trimmedLine.Contains(")") &&
-                        !trimmedLine.EndsWith(";") &&
-                        !trimmedLine.Contains("class ")
-                    );
-
-                    if (isMethodCandidate && !Regex.IsMatch(trimmedLine, @"\{\s*(?:get|set|init)\s*;", RegexOptions.IgnoreCase))
-                    {
-                        // PF: Hitung overridingMethods
-                        if (trimmedLine.Contains("override "))
-                        {
-                            overridingMethods++;
-                        }
-                        // PF: Hitung newMethods (metode yang bukan override dan bukan virtual)
-                        else if (!trimmedLine.Contains("virtual "))
-                        {
-                            newMethods++;
-                        }
-                    }
+                    sbSource.AppendLine(Path.GetFileName(filePath));
                 }
 
-                descendantsCount = CountDescendants(className, classHierarchy);
-
-                classPolymorphismMetrics.Add(new ClassPolymorphismMetric
-                {
-                    ClassName = className,
-                    NewMethods = newMethods,
-                    OverridingMethods = overridingMethods,
-                    DescendantsCount = descendantsCount
-                });
-            }
-
-            return classPolymorphismMetrics;
-        }
-
-        // Fungsi rekursif untuk menghitung jumlah turunan dari sebuah kelas
-        private int CountDescendants(string className, Dictionary<string, List<string>> classHierarchy)
-        {
-            int count = 0;
-            if (classHierarchy.ContainsKey(className))
-            {
-                foreach (var descendant in classHierarchy[className])
-                {
-                    count++;
-                    count += CountDescendants(descendant, classHierarchy);
-                }
-            }
-            return count;
-        }
-
-
-        // --- Struktur Data untuk Metrik Tingkat Kelas ---
-        // Kelas-kelas ini digunakan untuk menyimpan metrik per kelas
-        private class ClassMetric
-        {
-            public string ClassName { get; set; }
-            public int TotalMethods { get; set; }
-            public int HiddenMethods { get; set; }
-        }
-
-        private class ClassAttributeMetric
-        {
-            public string ClassName { get; set; }
-            public int TotalAttributes { get; set; }
-            public int HiddenAttributes { get; set; }
-        }
-
-        private class ClassInheritanceMetric
-        {
-            public string ClassName { get; set; }
-            public int TotalMethods { get; set; }
-            public int InheritedMethods { get; set; }
-        }
-
-        private class ClassAttributeInheritanceMetric
-        {
-            public string ClassName { get; set; }
-            public int TotalAttributes { get; set; }
-            public int InheritedAttributes { get; set; }
-        }
-
-        private class ClassCouplingMetric
-        {
-            public string ClassName { get; set; }
-            public int CoupledClasses { get; set; }
-        }
-
-        private class ClassPolymorphismMetric
-        {
-            public string ClassName { get; set; }
-            public int NewMethods { get; set; }
-            public int OverridingMethods { get; set; }
-            public int DescendantsCount { get; set; }
-        }
-
-        private string ExtractClassBody(string sourceCode, int startIndex)
-        {
-            int brace = 1;
-            int index = startIndex;
-            while (index < sourceCode.Length && brace > 0)
-            {
-                if (sourceCode[index] == '{') brace++;
-                else if (sourceCode[index] == '}') brace--;
-                index++;
-            }
-            return sourceCode.Substring(startIndex, index - startIndex - 1);
-        }
-
-        // --- Event Handler UI (tidak berubah) ---
-        private void labelAppName_Click(object sender, EventArgs e) { }
-
-        private void buttonhelp_Click(object sender, EventArgs e)
-        {
-            string message = "Cara Menggunakan MOOD Metrics Analyzer:\n" +
-                             "1. Klik 'Browse' untuk memilih **folder** yang berisi file kode sumber C# (termasuk subfolder).\n" +
-                             "2. Klik 'Analyze' untuk mengevaluasi metrik MOOD.\n" +
-                             "3. **Ringkasan keseluruhan** metrik MOOD sistem akan muncul di panel 'Overall Summary'.\n" +
-                             "4. **Rincian per-file** dengan keterangan folder/path relatif akan muncul di panel 'System-Level Metrics Analysis'.\n" +
-                             "\nPenjelasan Metrik MOOD:\n" +
-                             "- MHF (Method Hiding Factor): Persentase metode tersembunyi (private).\n" +
-                             "- AHF (Attribute Hiding Factor): Persentase atribut tersembunyi (private).\n" +
-                             "- MIF (Method Inheritance Factor): Proporsi metode yang diwarisi (metode override).\n" +
-                             "- AIF (Attribute Inheritance Factor): Proporsi atribut yang diwarisi (atribut protected).\n" +
-                             "- CF (Coupling Factor): Tingkat hubungan antar-kelas di seluruh sistem yang dianalisis.\n" +
-                             "- PF (Polymorphism Factor): Tingkat penggunaan polimorfisme dalam sistem.\n" +
-                             "\nGunakan hasil ini untuk menilai kualitas desain berorientasi objek Anda!";
-
-            MessageBox.Show(message, "Bantuan", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-
-        private void buttoninfo_Click(object sender, EventArgs e)
-        {
-            string information = "MOOD Metrics Analyzer\n" +
-                                 "Versi: 1.0.0\n" +
-                                 "Dikembangkan oleh: Indra Arya\n\n" +
-                                 "Aplikasi ini mengevaluasi kualitas desain berorientasi objek menggunakan metrik MOOD. " +
-                                 "Lihat bagian Bantuan untuk instruksi penggunaan.\n\n" +
-                                 "Kontak: 21106050002@student.uin-suka.ac.id";
-            MessageBox.Show(information, "Informasi", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-
-        private void buttonexport_Click(object sender, EventArgs e)
-        {
-            // Gabungkan output dari kedua kotak teks untuk ekspor
-            string overallSummary = textBoxSummary.Text;
-            string detailedOutput = textBoxOutput.Text;
-
-            string combinedResult = $"Overall MOOD Metrics Summary:{Environment.NewLine}" +
-                                    $"=========================================={Environment.NewLine}" +
-                                    overallSummary +
-                                    $"{Environment.NewLine}{Environment.NewLine}" +
-                                    $"Detailed Per-File Analysis:{Environment.NewLine}" +
-                                    $"=========================================={Environment.NewLine}" +
-                                    detailedOutput;
-
-            if (string.IsNullOrWhiteSpace(combinedResult) || combinedResult.Contains("No C# files selected."))
-            {
-                MessageBox.Show("Tidak ada data analisis untuk diekspor. Harap lakukan analisis terlebih dahulu.", "Kesalahan Ekspor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            SaveFileDialog saveFileDialog = new SaveFileDialog
-            {
-                Filter = "Text Files (*.txt)|*.txt|CSV Files (*.csv)|*.csv",
-                Title = "Simpan Analisis Metrik MOOD",
-                FileName = "MOOD_Metrics_Analysis"
-            };
-
-            if (saveFileDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    File.WriteAllText(saveFileDialog.FileName, combinedResult);
-                    MessageBox.Show("Analisis berhasil diekspor!", "Ekspor Berhasil", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Terjadi kesalahan saat mengekspor: {ex.Message}", "Kesalahan Ekspor", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                sbSource.AppendLine();
+                sbSource.AppendLine("Klik 'Analyze' untuk memproses semua file.");
+                textBoxSource.Text = sbSource.ToString();
             }
         }
 
@@ -685,17 +119,841 @@ namespace MOOD_Metrics
         {
             textBoxSource.Clear();
             textBoxOutput.Clear();
-            textBoxSummary.Clear(); // Kosongkan kotak teks ringkasan baru
+            textBoxSummary.Clear();
             textBoxPath.Text = "";
             csharpFiles.Clear();
 
             MessageBox.Show("Semua bidang telah dikosongkan.", "Berhasil Dikosongkan", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        private void textBoxPath_TextChanged(object sender, EventArgs e) { }
-        private void textBoxSource_TextChanged(object sender, EventArgs e) { }
-        private void textBoxOutput_TextChanged(object sender, EventArgs e) { }
-        private void textBoxSummary_TextChanged(object sender, EventArgs e) { }
-        private void label1_Click(object sender, EventArgs e) { }
+        private void buttonexport_Click(object sender, EventArgs e)
+        {
+            using SaveFileDialog saveFileDialog = new SaveFileDialog
+            {
+                Filter = "Text files (*.txt)|*.txt",
+                Title = "Save Analysis Result"
+            };
+
+            if (saveFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                File.WriteAllText(saveFileDialog.FileName, textBoxSummary.Text);
+                MessageBox.Show("Export berhasil disimpan.");
+            }
+        }
+
+        private void buttonhelp_Click(object sender, EventArgs e)
+        {
+            MessageBox.Show("Panduan:\n1. Klik Browse untuk pilih folder berisi file C#.\n2. Klik Analyze untuk melihat hasil MOOD Metrics.\n3. Gunakan tombol lain untuk informasi, ekspor, atau reset.");
+        }
+
+        private void buttoninfo_Click(object sender, EventArgs e)
+        {
+            MessageBox.Show("MOOD Metrics Analyzer\n" +
+                "Versi 1.1.0\n" +
+                "Dibuat oleh Indra Arya\n\n" +
+                "Menggunakan Roslyn untuk analisis C# OOP Metrics.\n" +
+                "Lihat bagian help untuk instruksi penggunaan.\n\n" +
+                "Kontak: 21106050002@student.uin-suka.ac.id");
+        }
+
+        private void labelAppName_Click(object sender, EventArgs e)
+        {
+            MessageBox.Show("Selamat datang di MOOD Metrics Analyzer!");
+        }
+
+        private void buttonToggleFullscreen_Click(object sender, EventArgs e)
+        {
+            if (!isFullscreen)
+            {
+                previousWindowState = this.WindowState;
+                previousFormBorderStyle = this.FormBorderStyle;
+
+                this.WindowState = FormWindowState.Normal;
+                this.FormBorderStyle = FormBorderStyle.None;
+                this.WindowState = FormWindowState.Maximized;
+                buttonToggleFullscreen.Text = "Windowed";
+            }
+            else
+            {
+                this.FormBorderStyle = previousFormBorderStyle;
+                this.WindowState = previousWindowState;
+                buttonToggleFullscreen.Text = "Fullscreen";
+            }
+            isFullscreen = !isFullscreen;
+            // Panggil Form1_Resize secara manual setelah toggle untuk memastikan tata letak diperbarui
+            Form1_Resize(this, EventArgs.Empty);
+        }
+
+        private void Form1_Resize(object sender, EventArgs e)
+        {
+            // Posisikan labelAppName di tengah secara horizontal
+            labelAppName.Left = (this.ClientSize.Width - labelAppName.Width) / 2;
+
+            // Sesuaikan posisi Y untuk semua FlowLayoutPanel agar sejajar di bagian bawah
+            int bottomControlsTop = this.ClientSize.Height - flowLayoutPanelLeft.Height - 10; // 10 margin dari bawah
+
+            flowLayoutPanelLeft.Top = bottomControlsTop;
+            flowLayoutPanelRight.Top = bottomControlsTop;
+
+            // Update posisi progress bar
+            progressBarAnalysis.Width = this.ClientSize.Width - (progressBarAnalysis.Left * 2); // Sesuaikan lebar
+            progressBarAnalysis.Left = (this.ClientSize.Width - progressBarAnalysis.Width) / 2; // Posisikan di tengah
+
+
+            // Atur lebar textBoxSource agar tetap
+            const int fixedSourceWidth = 347; // Lebar default textBoxSource saat initial design
+            textBoxSource.Width = fixedSourceWidth; //
+
+            // Hitung total lebar yang tersedia untuk textBoxOutput dan textBoxSummary
+            // Ini adalah lebar total form dikurangi:
+            // - textBoxSource.Left (margin kiri awal)
+            // - Lebar textBoxSource
+            // - paddingBetweenTextBoxes (antara Source dan Output)
+            // - paddingBetweenTextBoxes (antara Output dan Summary)
+            // - margin kanan yang sama dengan paddingBetweenTextBoxes
+            int totalHorizontalPaddingForTextBoxes = textBoxSource.Left + paddingBetweenTextBoxes * 2 + paddingBetweenTextBoxes;
+            int availableWidthForOutputAndSummary = this.ClientSize.Width - textBoxSource.Left - textBoxSource.Width - (paddingBetweenTextBoxes * 2);
+
+            // Tentukan lebar yang sama untuk textBoxOutput dan textBoxSummary
+            int equalWidthForOutputAndSummary = availableWidthForOutputAndSummary / 2;
+            if (equalWidthForOutputAndSummary < 100) equalWidthForOutputAndSummary = 100; // Minimal lebar
+
+            // Sesuaikan tinggi untuk semua textbox di area utama jika form diresize secara vertikal
+            int newHeight = this.ClientSize.Height - textBoxSource.Top - (flowLayoutPanelLeft.Height + 20); // 20 adalah margin dari bawah
+            if (newHeight < 50) newHeight = 50; // Minimum tinggi
+
+            textBoxSource.Height = newHeight;
+            textBoxOutput.Height = newHeight;
+            textBoxSummary.Height = newHeight;
+
+            // Atur ulang ukuran dan posisi textBoxOutput
+            textBoxOutput.Width = equalWidthForOutputAndSummary;
+            textBoxOutput.Left = textBoxSource.Right + paddingBetweenTextBoxes;
+
+            // Atur ulang ukuran dan posisi textBoxSummary
+            textBoxSummary.Width = equalWidthForOutputAndSummary;
+            textBoxSummary.Left = textBoxOutput.Right + paddingBetweenTextBoxes;
+
+            // Pastikan FlowLayoutPanelRight tetap menempel di kanan
+            // Perhitungan ini sudah dilakukan oleh Anchor sebelumnya, tapi ini memastikan konsistensi
+            flowLayoutPanelRight.Left = this.ClientSize.Width - flowLayoutPanelRight.Width - 12; // 12 adalah margin kanan
+        }
+
+        private void AppendFileMetricsToOutput(string label,
+                                               List<ClassMetric> mhfMetrics,
+                                               List<ClassAttributeMetric> ahfMetrics,
+                                               List<ClassInheritanceMetric> mifMetrics,
+                                               List<ClassAttributeInheritanceMetric> aifMetrics,
+                                               List<ClassCouplingMetric> cfMetrics,
+                                               List<ClassPolymorphismMetric> pfMetrics)
+        {
+            StringBuilder sbOutput = new();
+            StringBuilder sbSummary = new();
+
+            sbOutput.AppendLine($"--- Detail Analisis per Kelas: {label} ---\n");
+
+            if (mhfMetrics.Any())
+            {
+                sbOutput.AppendLine("--- Method Hiding Factor (MHF) ---");
+                foreach (var m in mhfMetrics)
+                {
+                    sbOutput.AppendLine($"  Kelas: {m.ClassName}");
+                    sbOutput.AppendLine($"    Total Methods Dideklarasikan: {m.TotalMethods}");
+                    sbOutput.AppendLine($"    Metode Tersembunyi (Kontribusi): {m.HiddenMethods:F2}");
+                    sbOutput.AppendLine();
+                }
+            }
+
+            if (ahfMetrics.Any())
+            {
+                sbOutput.AppendLine("--- Attribute Hiding Factor (AHF) ---");
+                foreach (var m in ahfMetrics)
+                {
+                    sbOutput.AppendLine($"  Kelas: {m.ClassName}");
+                    sbOutput.AppendLine($"    Total Atribut Dideklarasikan: {m.TotalAttributes}");
+                    sbOutput.AppendLine($"    Atribut Tersembunyi (Kontribusi): {m.HiddenAttributes:F2}");
+                    sbOutput.AppendLine();
+                }
+            }
+
+            if (mifMetrics.Any())
+            {
+                sbOutput.AppendLine("--- Method Inheritance Factor (MIF) ---");
+                foreach (var m in mifMetrics)
+                {
+                    sbOutput.AppendLine($"  Kelas: {m.ClassName}");
+                    sbOutput.AppendLine($"    Total Metode (Dideklarasikan + Diwarisi): {m.TotalMethods}");
+                    sbOutput.AppendLine($"    Metode Diwarisi (dan Dapat Diakses): {m.InheritedMethods}");
+                    sbOutput.AppendLine();
+                }
+            }
+
+            if (aifMetrics.Any())
+            {
+                sbOutput.AppendLine("--- Attribute Inheritance Factor (AIF) ---");
+                foreach (var m in aifMetrics)
+                {
+                    sbOutput.AppendLine($"  Kelas: {m.ClassName}");
+                    sbOutput.AppendLine($"    Total Atribut (Dideklarasikan + Diwarisi): {m.TotalAttributes}");
+                    sbOutput.AppendLine($"    Atribut Diwarisi (dan Dapat Diakses): {m.InheritedAttributes}");
+                    sbOutput.AppendLine();
+                }
+            }
+
+            if (cfMetrics.Any())
+            {
+                sbOutput.AppendLine("--- Coupling Factor (CF) ---");
+                foreach (var m in cfMetrics)
+                {
+                    sbOutput.AppendLine($"  Kelas: {m.ClassName}");
+                    sbOutput.AppendLine($"    Jumlah Kelas Terkopel: {m.CoupledClasses}");
+                    sbOutput.AppendLine();
+                }
+            }
+
+            if (pfMetrics.Any())
+            {
+                sbOutput.AppendLine("--- Polymorphism Factor (PF) ---");
+                foreach (var m in pfMetrics)
+                {
+                    sbOutput.AppendLine($"  Kelas: {m.ClassName}");
+                    sbOutput.AppendLine($"    Metode Baru: {m.NewMethods}");
+                    sbOutput.AppendLine($"    Metode Overriding: {m.OverridingMethods}");
+                    sbOutput.AppendLine($"    Jumlah Keturunan: {m.DescendantsCount}");
+                    sbOutput.AppendLine();
+                }
+            }
+
+            if (checkBoxDebug.Checked)
+            {
+                sbOutput.AppendLine("\n--- DEBUG INFO (Detail Perhitungan Internal) ---");
+                foreach (var m in mhfMetrics)
+                    sbOutput.AppendLine($"[DEBUG-MHF] {m.ClassName}: total={m.TotalMethods}, hidden={m.HiddenMethods:F2}");
+                foreach (var m in ahfMetrics)
+                    sbOutput.AppendLine($"[DEBUG-AHF] {m.ClassName}: total={m.TotalAttributes}, hidden={m.HiddenAttributes:F2}");
+                foreach (var m in mifMetrics)
+                    sbOutput.AppendLine($"[DEBUG-MIF] {m.ClassName}: total={m.TotalMethods}, inherited={m.InheritedMethods}");
+                foreach (var m in aifMetrics)
+                    sbOutput.AppendLine($"[DEBUG-AIF] {m.ClassName}: total={m.TotalAttributes}, inherited={m.InheritedAttributes}");
+                foreach (var m in cfMetrics)
+                    sbOutput.AppendLine($"[DEBUG-CF] {m.ClassName}: coupled={m.CoupledClasses}");
+                foreach (var m in pfMetrics)
+                    sbOutput.AppendLine($"[DEBUG-PF] {m.ClassName}: new={m.NewMethods}, override={m.OverridingMethods}, descendants={m.DescendantsCount}");
+                sbOutput.AppendLine();
+            }
+
+            textBoxOutput.Text = sbOutput.ToString();
+
+            double totalDeclaredMethods = analyzer.MhfMetrics.Sum(m => m.TotalMethods);
+            double totalHiddenMethods = analyzer.MhfMetrics.Sum(m => m.HiddenMethods);
+            double mhf = (totalDeclaredMethods > 0) ? totalHiddenMethods / totalDeclaredMethods : 0.0;
+
+            double totalDeclaredAttributes = analyzer.AhfMetrics.Sum(m => m.TotalAttributes);
+            double totalHiddenAttributes = analyzer.AhfMetrics.Sum(m => m.HiddenAttributes);
+            double ahf = (totalDeclaredAttributes > 0) ? totalHiddenAttributes / totalDeclaredAttributes : 0.0;
+
+            double totalCallableMethods = analyzer.MifMetrics.Sum(m => m.TotalMethods);
+            double totalInheritedMethods = analyzer.MifMetrics.Sum(m => m.InheritedMethods);
+            double mif = (totalCallableMethods > 0) ? totalInheritedMethods / totalCallableMethods : 0.0;
+
+            double totalCallableAttributes = analyzer.AifMetrics.Sum(m => m.TotalAttributes);
+            double totalInheritedAttributes = analyzer.AifMetrics.Sum(m => m.InheritedAttributes);
+            double aif = (totalCallableAttributes > 0) ? totalInheritedAttributes / totalCallableAttributes : 0.0;
+
+            int n = analyzer.CfMetrics.Count;
+            double totalCouplingPairs = analyzer.CfMetrics.Sum(c => (double)c.CoupledClasses);
+            double cfDenominator = (double)n * n;
+            double cf = (cfDenominator > 0) ? totalCouplingPairs / cfDenominator : 0.0;
+
+            double totalOverridingMethods = analyzer.PfMetrics.Sum(p => (double)p.OverridingMethods);
+            double pfDenominatorSum = analyzer.PfMetrics.Sum(p => (double)(p.NewMethods + p.OverridingMethods) * p.DescendantsCount);
+            double pf = (pfDenominatorSum > 0) ? totalOverridingMethods / pfDenominatorSum : 0.0;
+
+            sbSummary.AppendLine("--- Ringkasan MOOD Metrics Tingkat Sistem ---");
+            sbSummary.AppendLine("Hasil ini memberikan gambaran umum tentang kualitas desain berorientasi objek pada sistem Anda.");
+            sbSummary.AppendLine();
+
+            sbSummary.AppendLine("1. Method Hiding Factor (MHF)");
+            sbSummary.AppendLine("   Mengukur sejauh mana metode-metode dalam sistem tersembunyi (tidak dapat diakses secara publik).");
+            sbSummary.AppendLine($"   Formula: (Total Kontribusi Metode Tersembunyi) / (Total Metode yang Dideklarasikan) * 100%");
+            sbSummary.AppendLine($"   Perhitungan: ({totalHiddenMethods:F2}) / ({totalDeclaredMethods}) * 100% = {mhf:P2}");
+            sbSummary.AppendLine($"   Nilai Akhir: {mhf:P2}");
+            sbSummary.AppendLine();
+
+            sbSummary.AppendLine("2. Attribute Hiding Factor (AHF)");
+            sbSummary.AppendLine("   Mengukur sejauh mana atribut-atribut dalam sistem tersembunyi (tidak dapat diakses secara publik).");
+            sbSummary.AppendLine($"   Formula: (Total Kontribusi Atribut Tersembunyi) / (Total Atribut yang Dideklarasikan) * 100%");
+            sbSummary.AppendLine($"   Perhitungan: ({totalHiddenAttributes:F2}) / ({totalDeclaredAttributes}) * 100% = {ahf:P2}");
+            sbSummary.AppendLine($"   Nilai Akhir: {ahf:P2}");
+            sbSummary.AppendLine();
+
+            sbSummary.AppendLine("3. Method Inheritance Factor (MIF)");
+            sbSummary.AppendLine("   Mengukur sejauh mana metode diwarisi dalam sistem (proporsi metode yang diwarisi terhadap total metode yang dapat dipanggil).");
+            sbSummary.AppendLine($"   Formula: (Total Metode Diwarisi dan Dapat Diakses) / (Total Metode yang Dapat Dipanggil) * 100%");
+            sbSummary.AppendLine($"   Perhitungan: ({totalInheritedMethods}) / ({totalCallableMethods}) = {mif:P2}");
+            sbSummary.AppendLine($"   Nilai Akhir: {mif:P2}");
+            sbSummary.AppendLine();
+
+            sbSummary.AppendLine("4. Attribute Inheritance Factor (AIF)");
+            sbSummary.AppendLine("   Mengukur sejauh mana atribut diwarisi dalam sistem (proporsi atribut yang diwarisi terhadap total atribut yang dapat dipanggil).");
+            sbSummary.AppendLine($"   Formula: (Total Atribut Diwarisi dan Dapat Diakses) / (Total Atribut yang Dapat Dipanggil) * 100%");
+            sbSummary.AppendLine($"   Perhitungan: ({totalInheritedAttributes}) / ({totalCallableAttributes}) = {aif:P2}");
+            sbSummary.AppendLine($"   Nilai Akhir: {aif:P2}");
+            sbSummary.AppendLine();
+
+            sbSummary.AppendLine("5. Coupling Factor (CF)");
+            sbSummary.AppendLine("   Mengukur tingkat kopling antar kelas dalam sistem, tidak termasuk kopling karena pewarisan.");
+            sbSummary.AppendLine($"   Formula: (Jumlah Kelas Terkopel) / ((Total Kelas)^2) * 100%");
+            sbSummary.AppendLine($"   Perhitungan: ({totalCouplingPairs}) / ({n}^2) * 100% = ({totalCouplingPairs}) / ({cfDenominator:F0}) * 100% = {cf:P2}");
+            sbSummary.AppendLine($"   Nilai Akhir: {cf:P2}");
+            sbSummary.AppendLine();
+
+            sbSummary.AppendLine("6. Polymorphism Factor (PF)");
+            sbSummary.AppendLine("   Mengukur potensi polimorfisme dalam sistem (proporsi metode overriding terhadap situasi polimorfik maksimum).");
+            sbSummary.AppendLine($"   Formula: (Jumlah Total Metode Overriding) / (Jumlah Total [(Metode Baru + Metode Mengganti) * Jumlah Keturunan])");
+            sbSummary.AppendLine($"   Perhitungan: ({totalOverridingMethods}) / ({pfDenominatorSum:F2}) = {pf:P2}");
+            if (pfDenominatorSum == 0)
+            {
+                sbSummary.AppendLine("   Nilai Akhir: Tidak Terdefinisi (Undefined) karena penyebut adalah 0.");
+            }
+            else
+            {
+                sbSummary.AppendLine($"   Nilai Akhir: {pf:P2}");
+            }
+            sbSummary.AppendLine();
+
+            textBoxSummary.Text = sbSummary.ToString();
+        }
+    }
+
+    public class RoslynMoodAnalyzer
+    {
+        public List<ClassMetric> MhfMetrics = new();
+        public List<ClassAttributeMetric> AhfMetrics = new();
+        public List<ClassInheritanceMetric> MifMetrics = new();
+        public List<ClassAttributeInheritanceMetric> AifMetrics = new();
+        public List<ClassCouplingMetric> CfMetrics = new();
+        public List<ClassPolymorphismMetric> PfMetrics = new();
+
+        private Dictionary<string, INamedTypeSymbol> classSymbolMap = new();
+        private Dictionary<string, List<string>> classDescendants = new();
+
+        public void Analyze(string[] filePaths)
+        {
+            MhfMetrics.Clear();
+            AhfMetrics.Clear();
+            MifMetrics.Clear();
+            AifMetrics.Clear();
+            CfMetrics.Clear();
+            PfMetrics.Clear();
+            classDescendants.Clear();
+            classSymbolMap.Clear();
+
+            var workspace = new AdhocWorkspace();
+            var project = workspace.AddProject("MoodProject", LanguageNames.CSharp);
+
+            foreach (var path in filePaths)
+            {
+                string sourceCode = null;
+                try
+                {
+                    sourceCode = File.ReadAllText(path);
+                }
+                catch (IOException ex)
+                {
+                    Console.WriteLine($"Error reading file {path}: {ex.Message}");
+                    continue;
+                }
+                if (string.IsNullOrEmpty(sourceCode)) continue;
+
+                var doc = project.AddDocument(
+                    Path.GetFileName(path),
+                    text: SourceText.From(sourceCode),
+                    filePath: path
+                );
+                project = doc.Project;
+            }
+
+            var compilation = project.GetCompilationAsync().Result;
+            if (compilation == null) return;
+
+            foreach (var syntaxTree in compilation.SyntaxTrees)
+            {
+                if (syntaxTree == null) continue;
+
+                var semanticModel = compilation.GetSemanticModel(syntaxTree);
+                if (semanticModel == null) continue;
+
+                var root = syntaxTree.GetRoot();
+                if (root == null) continue;
+
+                var classDecls = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
+
+                foreach (var classDecl in classDecls)
+                {
+                    if (classDecl == null) continue;
+
+                    var classSymbol = semanticModel.GetDeclaredSymbol(classDecl) as INamedTypeSymbol;
+                    if (classSymbol == null) continue;
+
+                    if (classSymbol.IsImplicitlyDeclared || classSymbol.Name.Contains("<") || classSymbol.Name.Contains(">") ||
+                        classSymbol.OriginalDefinition.Name.EndsWith("Iterator"))
+                    {
+                        continue;
+                    }
+                    if (classDecl.SyntaxTree.FilePath != null && Path.GetFileName(classDecl.SyntaxTree.FilePath).EndsWith(".Designer.cs"))
+                    {
+                        continue;
+                    }
+                    if (classSymbol.Name == "Program" && classSymbol.ContainingNamespace.IsGlobalNamespace && classSymbol.GetMembers().Count(m => m is IMethodSymbol && m.Name == "Main") == 1)
+                    {
+                        continue;
+                    }
+                    if (classSymbol.GetMembers().Any(m => m is IMethodSymbol method && method.IsStatic && method.IsExtensionMethod))
+                    {
+                        continue;
+                    }
+                    if (classSymbol.IsStatic && !classSymbol.GetMembers().Any(m => m is IMethodSymbol method && (method.IsOverride || method.IsVirtual)))
+                    {
+                        if (classSymbol.Name == "LogService" ||
+                            classSymbol.Name == "InfoManager" ||
+                            classSymbol.Name == "HttpClientProvider" ||
+                            classSymbol.Name == "SystemMonitor" ||
+                            classSymbol.Name == "AIAnalysisService")
+                        {
+                            continue;
+                        }
+                    }
+
+                    if (classSymbol.TypeKind != TypeKind.Class)
+                    {
+                        continue;
+                    }
+
+                    classSymbolMap[classSymbol.ToDisplayString()] = classSymbol;
+
+                    if (classSymbol.BaseType != null && classSymbol.BaseType.SpecialType != SpecialType.System_Object)
+                    {
+                        var baseName = classSymbol.BaseType.ToDisplayString();
+                        if (!classDescendants.ContainsKey(baseName)) classDescendants[baseName] = new();
+                        classDescendants[baseName].Add(classSymbol.ToDisplayString());
+                    }
+                }
+            }
+
+            foreach (var classSymbol in classSymbolMap.Values)
+            {
+                if (classSymbol == null) continue;
+
+                string className = classSymbol.ToDisplayString();
+
+                int totalMethodsInClass = 0;
+                double hiddenMethodsSum = 0;
+                int totalAttributesInClass = 0;
+                double hiddenAttributesSum = 0;
+
+                int inheritedAndNotOverriddenMethods = 0;
+                int inheritedAndNotOverriddenAttributes = 0;
+
+                int newMethods = 0;
+                int overridingMethods = 0;
+
+                var coupledClassesSet = new HashSet<string>();
+
+                var currentSyntaxTree = classSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.SyntaxTree;
+                if (currentSyntaxTree == null) continue;
+
+                var currentSemanticModel = compilation.GetSemanticModel(currentSyntaxTree);
+                if (currentSemanticModel == null) continue;
+
+                var classDeclarationSyntax = currentSyntaxTree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>()
+                                            .FirstOrDefault(cds => currentSemanticModel.GetDeclaredSymbol(cds)?.Equals(classSymbol, SymbolEqualityComparer.Default) == true);
+
+                if (classDeclarationSyntax == null) continue;
+
+                foreach (var member in classSymbol.GetMembers())
+                {
+                    if (member == null || member.IsImplicitlyDeclared) continue;
+
+                    if (member is IMethodSymbol method &&
+                        method.MethodKind != MethodKind.PropertyGet && method.MethodKind != MethodKind.PropertySet &&
+                        !method.MethodKind.ToString().Contains("Constructor") &&
+                        !method.IsAbstract)
+                    {
+                        totalMethodsInClass++;
+
+                        if (method.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Private)
+                        {
+                            hiddenMethodsSum += 1.0;
+                        }
+                        else if (method.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Protected)
+                        {
+                            int classesNotInheriting = 0;
+                            int totalRelevantClasses = classSymbolMap.Count;
+
+                            if (totalRelevantClasses > 1)
+                            {
+                                foreach (var otherClassEntry in classSymbolMap)
+                                {
+                                    var otherClass = otherClassEntry.Value;
+                                    if (otherClass == null || otherClass.Equals(classSymbol, SymbolEqualityComparer.Default)) continue;
+
+                                    if (!IsDescendantOf(otherClass, classSymbol))
+                                    {
+                                        classesNotInheriting++;
+                                    }
+                                }
+                                hiddenMethodsSum += (double)classesNotInheriting / (totalRelevantClasses - 1);
+                            }
+                            else
+                            {
+                                hiddenMethodsSum += 1.0;
+                            }
+                        }
+
+                        if (!method.IsStatic)
+                        {
+                            if (method.IsOverride)
+                            {
+                                overridingMethods++;
+                            }
+                            else if (method.OverriddenMethod == null && !method.IsImplementationOfAnyInterfaceMethod())
+                            {
+                                newMethods++;
+                            }
+                        }
+                    }
+                    else if (member is IPropertySymbol prop)
+                    {
+                        if (!prop.IsStatic)
+                        {
+                            totalAttributesInClass++;
+
+                            if (prop.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Private ||
+                                (prop.SetMethod != null && prop.SetMethod.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Private) ||
+                                (prop.GetAttributes().Any(attr => attr.AttributeClass != null && attr.AttributeClass.Name == "JsonIgnoreAttribute")))
+                            {
+                                hiddenAttributesSum += 1.0;
+                            }
+                            else if (prop.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Protected)
+                            {
+                                int classesNotInheriting = 0;
+                                int totalRelevantClasses = classSymbolMap.Count;
+                                if (totalRelevantClasses > 1)
+                                {
+                                    foreach (var otherClassEntry in classSymbolMap)
+                                    {
+                                        var otherClass = otherClassEntry.Value;
+                                        if (otherClass == null || otherClass.Equals(classSymbol, SymbolEqualityComparer.Default)) continue;
+                                        if (!IsDescendantOf(otherClass, classSymbol))
+                                        {
+                                            classesNotInheriting++;
+                                        }
+                                    }
+                                    hiddenAttributesSum += (double)classesNotInheriting / (totalRelevantClasses - 1);
+                                }
+                                else
+                                {
+                                    hiddenAttributesSum += 1.0;
+                                }
+                            }
+                        }
+                    }
+                    else if (member is IFieldSymbol field && !field.IsStatic)
+                    {
+                        totalAttributesInClass++;
+
+                        if (field.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Private)
+                        {
+                            hiddenAttributesSum += 1.0;
+                        }
+                        else if (field.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Protected)
+                        {
+                            int classesNotInheriting = 0;
+                            int totalRelevantClasses = classSymbolMap.Count;
+                            if (totalRelevantClasses > 1)
+                            {
+                                foreach (var otherClassEntry in classSymbolMap)
+                                {
+                                    var otherClass = otherClassEntry.Value;
+                                    if (otherClass == null || otherClass.Equals(classSymbol, SymbolEqualityComparer.Default)) continue;
+                                    if (!IsDescendantOf(otherClass, classSymbol))
+                                    {
+                                        classesNotInheriting++;
+                                    }
+                                }
+                                hiddenAttributesSum += (double)classesNotInheriting / (totalRelevantClasses - 1);
+                            }
+                            else
+                            {
+                                hiddenAttributesSum += 1.0;
+                            }
+                        }
+                    }
+                }
+
+                INamedTypeSymbol currentBaseType = classSymbol.BaseType;
+                while (currentBaseType != null && currentBaseType.SpecialType != SpecialType.System_Object)
+                {
+                    foreach (var baseMember in currentBaseType.GetMembers())
+                    {
+                        if (baseMember == null || baseMember.IsImplicitlyDeclared) continue;
+
+                        bool isOverriddenOrHidden = false;
+                        foreach (var declaredMemberInCurrentClass in classSymbol.GetMembers())
+                        {
+                            if (declaredMemberInCurrentClass == null) continue;
+
+                            if (declaredMemberInCurrentClass.Name == baseMember.Name)
+                            {
+                                if (declaredMemberInCurrentClass is IMethodSymbol currentMethod && baseMember is IMethodSymbol baseMethod)
+                                {
+                                    if (currentMethod.OverriddenMethod?.Equals(baseMethod, SymbolEqualityComparer.Default) == true ||
+                                        (baseMethod.IsVirtual && currentMethod.IsVirtual && currentMethod.Name == baseMethod.Name &&
+                                         System.Linq.Enumerable.SequenceEqual((IEnumerable<IParameterSymbol>)currentMethod.Parameters, (IEnumerable<IParameterSymbol>)baseMethod.Parameters, SymbolEqualityComparer.Default)) ||
+                                         currentMethod.ExplicitInterfaceImplementations.Any())
+                                    {
+                                        isOverriddenOrHidden = true;
+                                        break;
+                                    }
+                                }
+                                else if ((declaredMemberInCurrentClass is IPropertySymbol || declaredMemberInCurrentClass is IFieldSymbol) &&
+                                         (baseMember is IPropertySymbol || baseMember is IFieldSymbol))
+                                {
+                                    isOverriddenOrHidden = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!isOverriddenOrHidden)
+                        {
+                            if (baseMember.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Public ||
+                                (baseMember.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Protected && IsDescendantOf(classSymbol, baseMember.ContainingType)))
+                            {
+                                if (baseMember is IMethodSymbol inheritedMethod &&
+                                    inheritedMethod.MethodKind != MethodKind.PropertyGet && inheritedMethod.MethodKind != MethodKind.PropertySet &&
+                                    !inheritedMethod.MethodKind.ToString().Contains("Constructor") &&
+                                    !inheritedMethod.IsStatic &&
+                                    !inheritedMethod.IsAbstract)
+                                {
+                                    inheritedAndNotOverriddenMethods++;
+                                }
+                                else if ((baseMember is IPropertySymbol inheritedProp && !inheritedProp.IsStatic) ||
+                                         (baseMember is IFieldSymbol inheritedField && !inheritedField.IsStatic))
+                                {
+                                    inheritedAndNotOverriddenAttributes++;
+                                }
+                            }
+                        }
+                    }
+                    currentBaseType = currentBaseType.BaseType;
+                }
+
+                MifMetrics.Add(new ClassInheritanceMetric
+                {
+                    ClassName = className,
+                    TotalMethods = totalMethodsInClass + inheritedAndNotOverriddenMethods,
+                    InheritedMethods = inheritedAndNotOverriddenMethods
+                });
+                AifMetrics.Add(new ClassAttributeInheritanceMetric
+                {
+                    ClassName = className,
+                    TotalAttributes = totalAttributesInClass + inheritedAndNotOverriddenAttributes,
+                    InheritedAttributes = inheritedAndNotOverriddenAttributes
+                });
+                MhfMetrics.Add(new ClassMetric { ClassName = className, TotalMethods = totalMethodsInClass, HiddenMethods = hiddenMethodsSum });
+                AhfMetrics.Add(new ClassAttributeMetric { ClassName = className, TotalAttributes = totalAttributesInClass, HiddenAttributes = hiddenAttributesSum });
+
+                Action<ITypeSymbol> addCoupledType = (typeSymbol) =>
+                {
+                    if (typeSymbol == null || typeSymbol.IsImplicitlyDeclared || typeSymbol.Name.Contains("<") || typeSymbol.Name.Contains(">")) return;
+
+                    if (typeSymbol is INamedTypeSymbol namedType && namedType.TypeKind == TypeKind.Class)
+                    {
+                        if (namedType.Equals(classSymbol, SymbolEqualityComparer.Default)) return;
+
+                        if (!classSymbolMap.ContainsKey(namedType.ToDisplayString()))
+                        {
+                            return;
+                        }
+
+                        if (IsDescendantOf(classSymbol, namedType) || IsDescendantOf(namedType, classSymbol))
+                        {
+                            return;
+                        }
+
+                        if (namedType.SpecialType != SpecialType.None) return;
+
+                        coupledClassesSet.Add(namedType.ToDisplayString());
+                    }
+                };
+
+                foreach (var node in classDeclarationSyntax.DescendantNodesAndSelf())
+                {
+                    if (node == null) continue;
+
+                    var typeInfo = currentSemanticModel.GetTypeInfo(node);
+                    if (typeInfo.Type != null) addCoupledType(typeInfo.Type);
+
+                    var symbolInfo = currentSemanticModel.GetSymbolInfo(node);
+                    if (symbolInfo.Symbol != null && symbolInfo.Symbol.ContainingType != null)
+                    {
+                        addCoupledType(symbolInfo.Symbol.ContainingType);
+                    }
+
+                    if (node is ObjectCreationExpressionSyntax objCreation && objCreation.Type != null)
+                    {
+                        addCoupledType(currentSemanticModel.GetTypeInfo(objCreation.Type).Type);
+                    }
+                    else if (node is CastExpressionSyntax castExpr && castExpr.Type != null)
+                    {
+                        addCoupledType(currentSemanticModel.GetTypeInfo(castExpr.Type).Type);
+                    }
+                    else if (node is MemberAccessExpressionSyntax memberAccess && memberAccess.Expression != null)
+                    {
+                        addCoupledType(currentSemanticModel.GetTypeInfo(memberAccess.Expression).Type);
+                    }
+                    else if (node is InvocationExpressionSyntax invocation)
+                    {
+                        var methodSymbol = currentSemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                        if (methodSymbol != null && methodSymbol.ContainingType != null)
+                        {
+                            addCoupledType(methodSymbol.ContainingType);
+                        }
+                    }
+                    else if (node is VariableDeclarationSyntax varDecl && varDecl.Type != null)
+                    {
+                        addCoupledType(currentSemanticModel.GetTypeInfo(varDecl.Type).Type);
+                    }
+                    else if (node is ParameterSyntax param && param.Type != null)
+                    {
+                        addCoupledType(currentSemanticModel.GetTypeInfo(param.Type).Type);
+                    }
+                }
+                CfMetrics.Add(new ClassCouplingMetric { ClassName = className, CoupledClasses = coupledClassesSet.Count });
+
+                PfMetrics.Add(new ClassPolymorphismMetric
+                {
+                    ClassName = className,
+                    NewMethods = newMethods,
+                    OverridingMethods = overridingMethods
+                });
+            }
+
+            foreach (var pf in PfMetrics)
+            {
+                if (classSymbolMap.TryGetValue(pf.ClassName, out var classSymbol))
+                {
+                    pf.DescendantsCount = CountDescendants(classSymbol);
+                }
+            }
+        }
+
+        private bool IsDescendantOf(INamedTypeSymbol potentialDescendant, INamedTypeSymbol potentialAncestor)
+        {
+            if (potentialDescendant == null || potentialAncestor == null || potentialDescendant.Equals(potentialAncestor, SymbolEqualityComparer.Default))
+            {
+                return false;
+            }
+
+            var currentBase = potentialDescendant.BaseType;
+            while (currentBase != null && currentBase.SpecialType != SpecialType.System_Object)
+            {
+                if (currentBase.Equals(potentialAncestor, SymbolEqualityComparer.Default))
+                {
+                    return true;
+                }
+                currentBase = currentBase.BaseType;
+            }
+            return false;
+        }
+
+        private int CountDescendants(INamedTypeSymbol classSymbol)
+        {
+            int count = 0;
+            if (classSymbol == null) return 0;
+
+            foreach (var otherClassSymbol in classSymbolMap.Values)
+            {
+                if (otherClassSymbol == null) continue;
+                if (IsDescendantOf(otherClassSymbol, classSymbol))
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+    }
+
+    public static class SymbolExtensions
+    {
+        public static bool IsPropertyAccessor(this IMethodSymbol method)
+        {
+            return method.MethodKind == MethodKind.PropertyGet || method.MethodKind == MethodKind.PropertySet;
+        }
+
+        public static bool IsImplementationOfAnyInterfaceMethod(this IMethodSymbol method)
+        {
+            if (method.ExplicitInterfaceImplementations.Any())
+            {
+                return true;
+            }
+
+            foreach (var @interface in method.ContainingType.AllInterfaces)
+            {
+                foreach (var interfaceMethod in @interface.GetMembers().OfType<IMethodSymbol>())
+                {
+                    var implementation = method.ContainingType.FindImplementationForInterfaceMember(interfaceMethod);
+                    if (implementation != null && implementation.Equals(method, SymbolEqualityComparer.Default))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    public class ClassMetric
+    {
+        public string ClassName { get; set; }
+        public int TotalMethods { get; set; }
+        public double HiddenMethods { get; set; }
+    }
+
+    public class ClassAttributeMetric
+    {
+        public string ClassName { get; set; }
+        public int TotalAttributes { get; set; }
+        public double HiddenAttributes { get; set; }
+    }
+
+    public class ClassInheritanceMetric
+    {
+        public string ClassName { get; set; }
+        public int TotalMethods { get; set; }
+        public int InheritedMethods { get; set; }
+    }
+
+    public class ClassAttributeInheritanceMetric
+    {
+        public string ClassName { get; set; }
+        public int TotalAttributes { get; set; }
+        public int InheritedAttributes { get; set; }
+    }
+
+    public class ClassCouplingMetric
+    {
+        public string ClassName { get; set; }
+        public int CoupledClasses { get; set; }
+    }
+
+    public class ClassPolymorphismMetric
+    {
+        public string ClassName { get; set; }
+        public int NewMethods { get; set; }
+        public int OverridingMethods { get; set; }
+        public int DescendantsCount { get; set; }
     }
 }
